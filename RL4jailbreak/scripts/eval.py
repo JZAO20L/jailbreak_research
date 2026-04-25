@@ -308,6 +308,8 @@ def main(argv: Optional[List[str]] = None):
                         help="LoRA 权重路径列表 (空=base model)")
     parser.add_argument("--prompt_ids", type=str, nargs="*", default=None,
                         help="用于测试的 jailbreak prompt ID 列表 (默认: 使用 REWRITE_PROMPT)")
+    parser.add_argument("--strategy_name", type=str, default=None,
+                        help="jailbreak prompt 策略名称 (从 jailbreak_prompts.py 加载)")
 
     # 模型路径
     parser.add_argument("--base_model_path", type=str, default=None)
@@ -354,6 +356,25 @@ def main(argv: Optional[List[str]] = None):
     for key, val in vars(args).items():
         if val is not None:
             cfg[key] = val
+
+    # 如果指定了 strategy_name, 从 jailbreak_prompts.py 加载对应的 prompt
+    if cfg.get("strategy_name"):
+        try:
+            import sys as _sys
+            _base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if _base_dir not in _sys.path:
+                _sys.path.insert(0, _base_dir)
+            from experiments.jailbreak_prompt_exp.jailbreak_prompts import (
+                get_strategy_template,
+                JAILBREAK_PROMPTS,
+            )
+            strategy_name = cfg["strategy_name"]
+            if strategy_name not in JAILBREAK_PROMPTS:
+                raise ValueError(f"未知策略: {strategy_name}. 可选: {list(JAILBREAK_PROMPTS.keys())}")
+            cfg["prompts"] = [get_strategy_template(strategy_name)]
+            print(f"[eval.py] 已加载策略: {strategy_name}")
+        except ImportError as e:
+            raise ImportError(f"无法加载 jailbreak_prompts: {e}")
 
     # 设置 GPU (policy=GPU0, target+guard=GPU1 分开运行)
     # 注意: 由于 policy 和 target/guard 不在同一时间运行, 可以共用 visible devices

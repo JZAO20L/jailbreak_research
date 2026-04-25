@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 from typing import List, Optional, Sequence
+import re
 import sys
 from tqdm.auto import tqdm 
 
@@ -32,6 +33,15 @@ def _post_process(text: str, require_tag: bool = True, tag_name: str = "new_jail
         text = str(text)
 
     t = text.strip()
+
+    # 显式检查并移除 <think>...</think> 标签
+    # 如果有<think>标签，只保留</think>之后的内容
+    think_pattern = r"<think>.*?</think>"
+    think_matches = re.findall(think_pattern, t, re.DOTALL)
+    if think_matches:
+        # 移除所有<think>标签及其内容
+        t = re.sub(think_pattern, "", t, flags=re.DOTALL)
+        t = t.strip()
 
     if require_tag:
         extracted = extract_tag_content(t, tag_name)
