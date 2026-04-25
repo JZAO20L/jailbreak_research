@@ -349,7 +349,7 @@ if __name__ == "__main__":
     parser.add_argument("--log_file", type=str, default=None)
 
     # quick direct eval defaults
-    parser.add_argument("--s1_eval_path", type=str, default=f"{BASE_DIR}/data/dataset/processed/s1/eval.jsonl")
+    parser.add_argument("--s1_eval_path", type=str, default=f"{BASE_DIR}/../data/dataset/processed/10k/eval.jsonl")
     parser.add_argument("--output_root", type=str, default=f"{BASE_DIR}/output/s1_eval_direct")
     parser.add_argument("--run_name", type=str, default=None)
 

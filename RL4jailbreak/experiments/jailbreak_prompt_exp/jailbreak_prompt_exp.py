@@ -43,7 +43,7 @@ from experiments.jailbreak_prompt_exp.jailbreak_prompts import (
 # =========================
 DEFAULT_CONFIG = {
     # 测试集路径 (默认使用test.jsonl)
-    "test_set": os.path.join(BASE_DIR, "data/dataset/processed/10k/test.jsonl"),
+    "test_set": os.path.join(BASE_DIR, "../data/dataset/processed/10k/test.jsonl"),
     
     # 输出目录
     "output_root": os.path.join(BASE_DIR, "experiments/jailbreak_prompt_exp/output"),

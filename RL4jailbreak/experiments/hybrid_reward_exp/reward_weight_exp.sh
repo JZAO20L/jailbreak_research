@@ -18,10 +18,10 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # 训练数据
-TRAIN_DATA="${TRAIN_DATA:-$BASE_DIR/data/dataset/processed/10k/train.jsonl}"
+TRAIN_DATA="${TRAIN_DATA:-$BASE_DIR/../data/dataset/processed/10k/train.jsonl}"
 
 # 评估数据
-EVAL_DATA="${EVAL_DATA:-$BASE_DIR/data/dataset/processed/10k/eval.jsonl}"
+EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/eval.jsonl}"
 
 # 输出目录
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/reward_weight_exp_output}"

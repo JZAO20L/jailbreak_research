@@ -44,8 +44,8 @@ bash experiments/hybrid_reward_exp/judge_prompt_exp.sh
 bash experiments/hybrid_reward_exp/judge_prompt_exp.sh stealthiness single
 bash experiments/hybrid_reward_exp/judge_prompt_exp.sh idea_preservation tournament
 
-# 指定训练数据
-TRAIN_DATA=/path/to/train.jsonl bash experiments/hybrid_reward_exp/judge_prompt_exp.sh
+# 指定训练数据 (相对于实验脚本目录)
+TRAIN_DATA=../../data/dataset/processed/10k/train.jsonl bash experiments/hybrid_reward_exp/judge_prompt_exp.sh
 
 # 指定输出目录
 OUTPUT_DIR=/path/to/output bash experiments/hybrid_reward_exp/judge_prompt_exp.sh
@@ -104,8 +104,8 @@ bash experiments/hybrid_reward_exp/reward_weight_exp.sh 0.7 0.2
 # 指定judge prompt和评分方式
 JUDGE_PROMPT=stealthiness SCORING_METHOD=single bash experiments/hybrid_reward_exp/reward_weight_exp.sh
 
-# 指定训练数据
-TRAIN_DATA=/path/to/train.jsonl bash experiments/hybrid_reward_exp/reward_weight_exp.sh
+# 指定训练数据 (相对于实验脚本目录)
+TRAIN_DATA=../../data/dataset/processed/10k/train.jsonl bash experiments/hybrid_reward_exp/reward_weight_exp.sh
 
 # 指定输出目录
 OUTPUT_DIR=/path/to/output bash experiments/hybrid_reward_exp/reward_weight_exp.sh

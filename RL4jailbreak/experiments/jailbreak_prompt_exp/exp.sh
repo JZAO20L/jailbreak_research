@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
 # 测试集路径 (使用test集而非val集)
-TEST_SET="${TEST_SET:-$BASE_DIR/data/dataset/processed/10k/test.jsonl}"
+TEST_SET="${TEST_SET:-$BASE_DIR/../data/dataset/processed/10k/test.jsonl}"
 
 # 输出目录
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"

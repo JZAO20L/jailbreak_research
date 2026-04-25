@@ -11,7 +11,7 @@ set -e
 # =========================
 
 # 评估数据集
-EVAL_PATH="${EVAL_PATH:-data/dataset/processed/10k/val.jsonl}"
+EVAL_PATH="${EVAL_PATH:-../data/dataset/processed/10k/val.jsonl}"
 
 # 模型路径
 BASE_MODEL="${BASE_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"

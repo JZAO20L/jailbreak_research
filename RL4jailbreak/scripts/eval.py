@@ -47,7 +47,7 @@ from src.prompts import REWRITE_PROMPT, GUARD_PROMPT
 # =========================
 DEFAULT_CONFIG = {
     # 评估数据集 (默认 val.jsonl)
-    "eval_path": os.path.join(BASE_DIR, "data/dataset/processed/10k/val.jsonl"),
+    "eval_path": os.path.join(BASE_DIR, "../data/dataset/processed/10k/val.jsonl"),
 
     # LoRA 路径列表 (空列表=base model)
     "lora_paths": [],

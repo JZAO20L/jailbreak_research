@@ -63,7 +63,7 @@ python experiments/jailbreak_prompt_exp/jailbreak_prompt_exp.py --gap_threshold 
 
 # 指定测试集
 python experiments/jailbreak_prompt_exp/jailbreak_prompt_exp.py \
-    --test_set data/dataset/processed/10k/test.jsonl
+    --test_set ../data/dataset/processed/10k/test.jsonl
 
 # 指定输出目录
 python experiments/jailbreak_prompt_exp/jailbreak_prompt_exp.py \

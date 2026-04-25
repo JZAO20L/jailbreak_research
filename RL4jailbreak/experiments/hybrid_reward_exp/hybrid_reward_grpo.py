@@ -151,9 +151,9 @@ def parse_args():
 
     # 数据集
     parser.add_argument("--train_data", type=str,
-                        default=os.path.join(BASE_DIR, "data/dataset/processed/10k/train.jsonl"))
+                        default=os.path.join(BASE_DIR, "../data/dataset/processed/10k/train.jsonl"))
     parser.add_argument("--eval_data", type=str,
-                        default=os.path.join(BASE_DIR, "data/dataset/processed/10k/eval.jsonl"))
+                        default=os.path.join(BASE_DIR, "../data/dataset/processed/10k/eval.jsonl"))
 
     # 输出
     parser.add_argument("--output_dir", type=str, default=DEFAULT_ARGS["output_dir"])
