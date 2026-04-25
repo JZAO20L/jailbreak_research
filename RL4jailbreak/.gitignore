@@ -1,0 +1,69 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+*.egg
+.mypy_cache/
+.pytest_cache/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment and private files
+.env
+.claude/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Output directory - ignore all
+output/
+
+# Sessions
+sessions/
+
+# Logs
+*.log
+*.log.*
+
+# Large dataset files
+data/dataset/wildguard_train.jsonl
+data/dataset/wildguard_train_jailbreak_only.jsonl
+data/dataset/wildguard_train_minimal.jsonl
+data/dataset/wildjailbreak-train.jsonl
+data/dataset/processed/deduped_all.jsonl
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Qwen Code
+.qwen/
+
+# SwanLab logs
+scripts/swanlog/

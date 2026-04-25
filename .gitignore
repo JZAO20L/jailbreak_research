@@ -89,6 +89,11 @@ $RECYCLE.BIN/
 # Raw large datasets (keep processed ones)
 **/raw_data/
 **/*.parquet
+# Large dataset files (>100MB)
+data/dataset/wildguard_train.jsonl
+data/dataset/wildjailbreak-train.jsonl
+data/dataset/wildguard_train_jailbreak_only.jsonl
+data/dataset/wildguard_train_minimal.jsonl
 
 # Downloaded model caches
 **/models/*/

@@ -1,0 +1,6 @@
+{
+  "description": "S2 预留的原始训练数据，需与 S1 生成的新 prompt 混合后使用",
+  "reserved_size": 2000,
+  "usage": "S2 train = S1_generated_prompts (2000) + this_reserved_data (2000) = 4000",
+  "note": "S1 训练完成后，使用 scripts/merge_s2_train.py 合并数据"
+}
