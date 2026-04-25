@@ -1,0 +1,121 @@
+# ========================================
+# Python
+# ========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# ========================================
+# IDE / Editor
+# ========================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ========================================
+# Jupyter
+# ========================================
+.ipynb_checkpoints/
+
+# ========================================
+# ML Experiment Logs & Outputs
+# ========================================
+# SwanLab / WandB experiment logs
+**/swanlog/
+wandb/
+**/wandb/
+
+# Training checkpoints & model weights
+**/*.ckpt
+**/*.pt
+**/*.bin
+**/pytorch_model.bin
+**/adapter_model.bin
+**/trainer_state.json
+**/checkpoint-*/
+
+# Large output directories (keep the directory structure, ignore contents)
+**/output/**/*.json
+**/output/**/*.jsonl
+**/output/**/checkpoint*/
+
+# Keep important output summaries
+!**/output/**/summary.json
+
+# ========================================
+# Session / State Files
+# ========================================
+**/sessions/
+**/cron/
+
+# ========================================
+# AI Assistant Config (Personal, Not for Repo)
+# ========================================
+.claude/
+.qwen/
+
+# ========================================
+# Environment & Secrets
+# ========================================
+.env
+.env.*
+*.key
+*.secret
+
+# ========================================
+# OS Files
+# ========================================
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ========================================
+# Large Data / Model Files
+# ========================================
+# Raw large datasets (keep processed ones)
+**/raw_data/
+**/*.parquet
+
+# Downloaded model caches
+**/models/*/
+!models/.gitkeep
+
+# ========================================
+# Archives
+# ========================================
+*.zip
+*.tar.gz
+*.rar
+!RL4jailbreak.zip
+
+# ========================================
+# Deprecated / Legacy Scripts
+# ========================================
+RL4jailbreak/scripts/deprecated/
+
+# ========================================
+# Logs
+# ========================================
+*.log
+s1_eval*.log
+s2_eval*.log
+
+# ========================================
+# Keep directory structures
+# ========================================
+# Git doesn't track empty directories, so we keep .gitkeep files
+models/.gitkeep
