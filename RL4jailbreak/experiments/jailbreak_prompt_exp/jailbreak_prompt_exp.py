@@ -438,7 +438,7 @@ def main():
             guard_temperature=config.get("guard_temperature", 0.0),
         )
 
-        baseline_asr = baseline_metrics.get("asr", 0.0)
+        baseline_asr = baseline_metrics.get("overall", {}).get("asr", 0.0)
         print(f"\n  基线ASR: {baseline_asr:.4f}")
 
         baseline_result = {
@@ -498,7 +498,7 @@ def main():
             raw_output_path=raw_output_path,
         )
 
-        asr = metrics.get("asr", 0.0)
+        asr = metrics.get("overall", {}).get("asr", 0.0)
         results.append((strategy_name, asr))
 
         strategy_result = {
