@@ -61,8 +61,8 @@ DEFAULT_CONFIG = {
     # 生成配置
     "k": 1,
     "rewrite_temperature": 0.7,
-    "rewrite_max_tokens": 1024,
-    "max_model_len": 2048,
+    "rewrite_max_tokens": 2048,
+    "max_model_len": 4096,
     
     # 其他
     "sleep_between_evals": 10,  # 每次评估之间等待的秒数

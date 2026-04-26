@@ -69,12 +69,12 @@ DEFAULT_CONFIG = {
 
     # vLLM 配置
     "gpu_memory_utilization": 0.9,
-    "max_model_len": 2048,
+    "max_model_len": 4096,
     "timeout": 900,
 
     # 生成配置
     "rewrite_temperature": 0.7,
-    "rewrite_max_tokens": 1024,
+    "rewrite_max_tokens": 2048,
     "rewrite_max_workers": 16,
     "rewrite_batch_size": 64,
     "k": 1,

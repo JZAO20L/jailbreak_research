@@ -84,7 +84,7 @@ class VLLMClient:
         gpu_id: str = "0",
         # ===== vLLM server 核心参数 =====
         host: str = "127.0.0.1",
-        max_model_len: int = 8192,
+        max_model_len: int = 4096,
         tensor_parallel_size: int = 1,
         gpu_memory_utilization: float = 0.9,
         dtype: str = "auto",

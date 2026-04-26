@@ -43,7 +43,8 @@ GUARD_MODEL_PATH = "/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B"
 
 DEFAULT_GPU_IDS = "0,1"
 DEFAULT_GPU_MEM_UTIL = 0.7
-DEFAULT_MAX_MODEL_LEN = 2048
+DEFAULT_MAX_MODEL_LEN = 4096
+DEFAULT_MAX_COMPLETION_LEN = 2048
 
 # =============================================================================
 # 服务配置

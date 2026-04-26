@@ -155,7 +155,7 @@ if __name__ == "__main__":
         launch_server=True,
         timeout=900,
         gpu_memory_utilization=0.9,
-        max_model_len=1024,
+        max_model_len=4096,
         enable_lora=True,
         lora_path=LORA_DIR,
         lora_name="s1_lora",
