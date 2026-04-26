@@ -26,7 +26,7 @@ from src.prompts import REWRITE_PROMPT
 from src.utils import extract_tag_content
 
 
-def _post_process(text: str, require_tag: bool = True, tag_name: str = "new_jailbreak_prompt") -> str:
+def _post_process(text: str, require_tag: bool = False, tag_name: str = "new_jailbreak_prompt") -> str:
     if text is None:
         return ""
     if not isinstance(text, str):
@@ -47,11 +47,8 @@ def _post_process(text: str, require_tag: bool = True, tag_name: str = "new_jail
         extracted = extract_tag_content(t, tag_name)
         return extracted.strip() if extracted else ""
 
-    # require_tag=False：做最少清理
-    low = t.lower()
-    if low.startswith("rewritten prompt:"):
-        t = t[len("rewritten prompt:"):].strip()
-
+    # require_tag=False：直接返回清理后的文本
+    # 移除可能的引号包裹
     if len(t) >= 2 and ((t[0] == t[-1] == '"') or (t[0] == t[-1] == "'")):
         t = t[1:-1].strip()
 
@@ -68,7 +65,7 @@ def rewrite_prompts_k(
     max_tokens: int = 512,
     stop: Optional[List[str]] = None,
     max_workers: int = 16,
-    require_tag: bool = True,
+    require_tag: bool = False,
     tag_name: str = "new_jailbreak_prompt",
     # tqdm / batching
     show_progress: bool = True,

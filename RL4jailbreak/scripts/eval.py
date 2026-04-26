@@ -210,8 +210,7 @@ def run_single_eval(
             stop=None,
             max_workers=rewrite_max_workers,
             batch_size=rewrite_batch_size,
-            require_tag=True,
-            tag_name="new_jailbreak_prompt",
+            require_tag=False,
             show_progress=True,
             tqdm_desc=f"rewrite_{lora_label}",
         )

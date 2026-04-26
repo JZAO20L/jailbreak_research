@@ -45,7 +45,7 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 sys.path.insert(0, BASE_DIR)
 
 from src.vllm_client import VLLMClient
-from src.utils import extract_tag_content, extract_label_categories_refusal
+from src.utils import extract_label_categories_refusal
 from src.prompts import REWRITE_PROMPT, GUARD_PROMPT
 from experiments.hybrid_reward_exp.judge_prompts import (
     JUDGE_PROMPTS,
@@ -253,15 +253,13 @@ def load_train_dataset(path: str) -> Dataset:
 # 奖励函数
 # =============================================================================
 def format_reward(prompts: List[str], completions: List[str], **kwargs) -> List[float]:
-    """Format reward: 检查是否有有效的 <new_jailbreak_prompt> 标签"""
+    """Format reward: 检查重写后的内容是否合理 (非空, 字数合适)"""
     out = []
     for c in completions:
-        extracted = extract_tag_content(c, "new_jailbreak_prompt")
-        ok_tag = extracted is not None and len(extracted.strip()) > 0
-        text = extracted.strip() if extracted else (c or "").strip()
+        text = (c or "").strip()
         wc = len(text.split())
         ok_len = 10 <= wc <= 500
-        out.append(1.0 if (ok_tag and ok_len) else 0.0)
+        out.append(1.0 if ok_len else 0.0)
     return [x * args.format_weight for x in out]
 
 
@@ -300,8 +298,8 @@ def judge_reward(prompts: List[str], completions: List[str], **kwargs) -> List[f
         # 单条打分模式
         judge_prompts = []
         for p, c in zip(prompts, completions):
-            original_prompt = extract_tag_content(p, "original_prompt") or p
-            rewritten = extract_tag_content(c, "new_jailbreak_prompt") or c
+            original_prompt = p  # 直接使用原始输入
+            rewritten = (c or "").strip()  # 直接输出, 无标签
             judge_prompts.append(
                 judge_template.format(
                     original_prompt=original_prompt,
@@ -321,14 +319,10 @@ def judge_reward(prompts: List[str], completions: List[str], **kwargs) -> List[f
 
     elif args.scoring_method == "tournament":
         # 锦标赛打分模式
-        # 注意: 锦标赛需要在训练时收集8个生成,然后进行对比
-        # 这里简化处理: 每条单独评分,但使用锦标赛的逻辑
-        # 实际完整的锦标赛需要在训练循环中实现
-
         judge_prompts = []
         for p, c in zip(prompts, completions):
-            original_prompt = extract_tag_content(p, "original_prompt") or p
-            rewritten = extract_tag_content(c, "new_jailbreak_prompt") or c
+            original_prompt = p
+            rewritten = (c or "").strip()
             judge_prompts.append(
                 judge_template.format(
                     original_prompt=original_prompt,
@@ -354,8 +348,8 @@ def asr_reward(prompts: List[str], completions: List[str], **kwargs) -> List[flo
     """ASR reward: 发送到target,然后用guard分类"""
     jailbreak_prompts = []
     for p, c in zip(prompts, completions):
-        rewritten = extract_tag_content(c, "new_jailbreak_prompt") or c
-        jailbreak_prompts.append(rewritten.strip())
+        rewritten = (c or "").strip()  # 直接输出, 无标签
+        jailbreak_prompts.append(rewritten)
 
     # Step 1: 获取Target响应
     target_responses = TARGET_JUDGE_CLIENT.llm_batch_call(
