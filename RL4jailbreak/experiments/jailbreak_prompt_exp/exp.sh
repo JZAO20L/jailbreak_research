@@ -86,11 +86,11 @@ check_port_active() {
     curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/health" 2>/dev/null | grep -q "200"
 }
 
-# 等待端口就绪 (最多等待60秒)
+# 等待端口就绪 (最多等待240秒)
 wait_for_port() {
     local port=$1
     local name=$2
-    for i in $(seq 1 60); do
+    for i in $(seq 1 120); do
         if check_port_active $port; then
             log "$name 服务就绪 (端口:$port)"
             return 0
