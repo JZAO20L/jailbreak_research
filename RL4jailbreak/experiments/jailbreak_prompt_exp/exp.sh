@@ -146,7 +146,7 @@ START_TIME=$(date +%s)
 log "Step 1/3: 启动模型服务..."
 
 log "启动Policy (GPU0:$POLICY_PORT)..."
-env -u OMP_NUM_THREADS CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
+CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
     --host 127.0.0.1 --port $POLICY_PORT \
     --max-model-len 4096 --gpu-memory-utilization 0.9 \
     --served-model-name policy \
@@ -154,7 +154,7 @@ env -u OMP_NUM_THREADS CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
 wait_for_port $POLICY_PORT "Policy"
 
 log "启动Target (GPU1:$TARGET_PORT)..."
-env -u OMP_NUM_THREADS CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
+CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
     --host 127.0.0.1 --port $TARGET_PORT \
     --max-model-len 4096 --gpu-memory-utilization 0.4 \
     --served-model-name target \
@@ -162,7 +162,7 @@ env -u OMP_NUM_THREADS CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
 wait_for_port $TARGET_PORT "Target"
 
 log "启动Guard (GPU1:$GUARD_PORT)..."
-env -u OMP_NUM_THREADS CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$GUARD_MODEL" \
+CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$GUARD_MODEL" \
     --host 127.0.0.1 --port $GUARD_PORT \
     --max-model-len 4096 --gpu-memory-utilization 0.4 \
     --served-model-name guard \
