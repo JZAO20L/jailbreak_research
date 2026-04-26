@@ -18,9 +18,10 @@ BASE_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 TEST_SET="${TEST_SET:-$BASE_DIR/../data/dataset/processed/10k/test.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
 
-POLICY_MODEL="${POLICY_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B}"
+# 模型路径 - 使用 := 处理空值情况
+: "${POLICY_MODEL:=/root/autodl-tmp/models/Qwen/Qwen3-4B}"
+: "${TARGET_MODEL:=/root/autodl-tmp/models/Qwen/Qwen3-4B}"
+: "${GUARD_MODEL:=/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B}"
 
 POLICY_PORT=8003
 TARGET_PORT=8001
