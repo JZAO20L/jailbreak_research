@@ -146,6 +146,8 @@ def run_asr_test(
     target_temperature: float = 0.0,
     guard_max_tokens: int = 256,
     guard_temperature: float = 0.0,
+    save_raw_results: bool = False,
+    raw_output_path: Optional[str] = None,
 ) -> Dict:
     """对重写后的prompt进行ASR测试"""
     # 构建测试数据
@@ -206,9 +208,18 @@ def run_asr_test(
             guard_temperature=guard_temperature,
             show_progress=True,
             sleep_s_between_stage=0.0,
-            save_raw_results=False,
+            save_raw_results=save_raw_results,  # 控制是否保存原始结果
         )
-        return metrics
+
+        # 如果需要保存原始生成内容
+        if save_raw_results and raw_output_path and "results" in metrics:
+            with open(raw_output_path, "w", encoding="utf-8") as f:
+                json.dump(metrics["results"], f, ensure_ascii=False, indent=2)
+            print(f"\n  原始生成内容已保存: {raw_output_path}")
+
+        # 返回精简后的指标（不含完整results）
+        summary = {k: v for k, v in metrics.items() if k != "results"}
+        return summary
     finally:
         os.unlink(temp_path)
 
@@ -471,6 +482,7 @@ def main():
         )
 
         # ASR测试
+        raw_output_path = os.path.join(strategy_output_dir, "raw_results.json")
         metrics = run_asr_test(
             target_client=target_client,
             guard_client=guard_client,
@@ -482,6 +494,8 @@ def main():
             target_temperature=config.get("target_temperature", 0.0),
             guard_max_tokens=config.get("guard_max_tokens", 256),
             guard_temperature=config.get("guard_temperature", 0.0),
+            save_raw_results=True,
+            raw_output_path=raw_output_path,
         )
 
         asr = metrics.get("asr", 0.0)
