@@ -9,6 +9,10 @@ Jailbreak Prompt 实验脚本 - 实验1
 - Gap Threshold 筛选
 - 进度条显示
 
+特点：
+- 三个模型只启动一次，所有策略共享
+- 不反复加载/卸载模型，提高实验效率
+
 使用方法:
     python jailbreak_prompt_exp.py                               # 运行所有策略
     python jailbreak_prompt_exp.py --topk 5                      # 只输出top5策略
@@ -20,6 +24,8 @@ Jailbreak Prompt 实验脚本 - 实验1
 import os
 import sys
 import json
+import re
+import gc
 import argparse
 import datetime
 import time
@@ -31,6 +37,11 @@ from tqdm import tqdm
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, BASE_DIR)
 
+from src.vllm_client import VLLMClient
+from src.generate import rewrite_prompts_k
+from src.test import run_asr_test_serial
+from src.prompts import GUARD_PROMPT
+from src.utils import extract_label_categories_refusal
 from experiments.jailbreak_prompt_exp.jailbreak_prompts import (
     JAILBREAK_PROMPTS,
     get_all_strategy_names,
@@ -44,138 +55,175 @@ from experiments.jailbreak_prompt_exp.jailbreak_prompts import (
 DEFAULT_CONFIG = {
     # 测试集路径 (默认使用test.jsonl)
     "test_set": os.path.join(BASE_DIR, "../data/dataset/processed/10k/test.jsonl"),
-    
+
     # 输出目录
     "output_root": os.path.join(BASE_DIR, "experiments/jailbreak_prompt_exp/output"),
-    
+
     # 模型路径
-    "base_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
+    "policy_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
     "target_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
     "guard_model": "/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B",
-    
-    # vLLM端口
+
+    # 端口
     "policy_port": 8003,
     "target_port": 8001,
     "guard_port": 8002,
-    
+
     # 生成配置
     "k": 1,
     "rewrite_temperature": 0.7,
     "rewrite_max_tokens": 2048,
     "max_model_len": 4096,
-    
+
+    # ASR测试配置
+    "test_batch_size": 64,
+    "test_max_workers": 16,
+    "target_max_tokens": 512,
+    "target_temperature": 0.0,
+    "guard_max_tokens": 256,
+    "guard_temperature": 0.0,
+
     # 其他
-    "sleep_between_evals": 10,  # 每次评估之间等待的秒数
+    "sleep_between_evals": 5,  # 每次评估之间等待的秒数
 }
 
 
-def extract_asr_from_summary(summary_dir: str) -> float:
-    """
-    从eval输出的summary.json中提取ASR
-    
-    Returns:
-        float: ASR值，如果找不到则返回0.0
-    """
-    import glob
-    
-    # 查找summary.json文件
-    pattern = os.path.join(summary_dir, "*", "summary.json")
-    files = glob.glob(pattern)
-    
-    if not files:
-        # 尝试直接在目录中查找
-        pattern = os.path.join(summary_dir, "summary.json")
-        files = glob.glob(pattern)
-    
-    if not files:
-        return 0.0
-    
-    try:
-        with open(files[0], 'r', encoding='utf-8') as f:
-            data = json.load(f)
-        
-        # 尝试多种可能的路径
-        if 'combinations' in data:
-            return data['combinations'][0].get('asr', 0.0)
-        elif 'overall' in data:
-            return data['overall'].get('asr', 0.0)
-        elif 'asr' in data:
-            return data['asr']
-        else:
-            return 0.0
-    except Exception as e:
-        print(f"  [警告] 无法解析summary文件: {e}")
-        return 0.0
+# =========================
+# 辅助函数
+# =========================
+def load_test_set(path: str) -> List[Dict]:
+    """加载测试集"""
+    items = []
+    with open(path, "r", encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                items.append(json.loads(line))
+    return items
 
 
-def run_eval_for_strategy(
-    strategy_name: str,
-    strategy_template: Optional[str] = None,
-    test_set: str = "",
-    output_dir: str = "",
-    config: dict = None,
-    is_baseline: bool = False,
-) -> float:
+def run_rewrite(
+    policy_client: VLLMClient,
+    originals: List[str],
+    prompt_template: Optional[str] = None,
+    k: int = 1,
+    temperature: float = 0.7,
+    max_tokens: int = 2048,
+) -> List[List[str]]:
     """
-    对单个策略运行评估
-    
+    对测试集进行重写
+
     Args:
-        strategy_name: 策略名称
-        strategy_template: 策略模板（None表示使用原始prompt）
-        test_set: 测试集路径
-        output_dir: 输出目录
-        config: 配置字典
-        is_baseline: 是否是基线测试
-    
-    Returns:
-        float: ASR值
+        prompt_template: 如果为None，则不重写，直接使用原始prompt
     """
-    if config is None:
-        config = {}
-    
-    # 导入eval脚本
-    sys.path.insert(0, os.path.join(BASE_DIR, "scripts"))
-    from eval import main as eval_main
-    
-    # 构建参数
-    run_name = "baseline_original" if is_baseline else f"strategy_{strategy_name}"
-    
-    eval_args = [
-        "--eval_path", test_set,
-        "--base_model_path", config.get("base_model", DEFAULT_CONFIG["base_model"]),
-        "--target_model_path", config.get("target_model", DEFAULT_CONFIG["target_model"]),
-        "--guard_model_path", config.get("guard_model", DEFAULT_CONFIG["guard_model"]),
-        "--policy_port", str(config.get("policy_port", DEFAULT_CONFIG["policy_port"])),
-        "--target_port", str(config.get("target_port", DEFAULT_CONFIG["target_port"])),
-        "--guard_port", str(config.get("guard_port", DEFAULT_CONFIG["guard_port"])),
-        "--k", str(config.get("k", DEFAULT_CONFIG["k"])),
-        "--rewrite_temperature", str(config.get("rewrite_temperature", DEFAULT_CONFIG["rewrite_temperature"])),
-        "--rewrite_max_tokens", str(config.get("rewrite_max_tokens", DEFAULT_CONFIG["rewrite_max_tokens"])),
-        "--max_model_len", str(config.get("max_model_len", DEFAULT_CONFIG["max_model_len"])),
-        "--output_root", output_dir,
-        "--run_name", run_name,
-    ]
-    
-    if is_baseline:
-        # 基线测试：使用原始prompt (不重写)
-        eval_args.extend(["--prompt_ids", "original"])
-    else:
-        # 策略测试：使用策略名
-        eval_args.extend(["--strategy_name", strategy_name])
-    
-    print(f"  启动评估: {strategy_name}")
-    print(f"  输出目录: {output_dir}")
-    
-    # 执行评估
+    if prompt_template is None:
+        # 基线：直接使用原始prompt
+        return [[o] for o in originals]
+
+    # 使用jailbreak模板重写
+    # 临时构建prompt列表
+    prompts = [prompt_template.format(original_prompt=o) for o in originals]
+
+    rewritten = rewrite_prompts_k(
+        client=policy_client,
+        prompts=prompts,
+        k=k,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        require_tag=False,
+        show_progress=True,
+        tqdm_desc="rewrite",
+    )
+    return rewritten
+
+
+def run_asr_test(
+    target_client: VLLMClient,
+    guard_client: VLLMClient,
+    originals: List[str],
+    rewritten_buckets: List[List[str]],
+    test_batch_size: int = 64,
+    test_max_workers: int = 16,
+    target_max_tokens: int = 512,
+    target_temperature: float = 0.0,
+    guard_max_tokens: int = 256,
+    guard_temperature: float = 0.0,
+) -> Dict:
+    """
+    对重写后的prompt进行ASR测试
+
+    Returns:
+        dict: 包含ASR指标的字典
+    """
+    # 构建测试数据: 每个原始prompt对应k个重写版本
+    test_data = []
+    for orig, bucket in zip(originals, rewritten_buckets):
+        for j, new_prompt in enumerate(bucket):
+            new_prompt = (new_prompt or "").strip()
+            if not new_prompt:
+                continue
+            test_data.append({
+                "prompt": new_prompt,
+                "original_prompt": orig,
+                "id": f"{test_data.__len__()}_{j}",
+            })
+
+    if not test_data:
+        return {"asr": 0.0, "refusal_rate": 0.0, "partial_rate": 0.0, "success_rate": 0.0, "total": 0, "valid": 0}
+
+    # 临时保存测试数据
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False, encoding="utf-8") as f:
+        for item in test_data:
+            f.write(json.dumps(item, ensure_ascii=False) + "\n")
+        temp_path = f.name
+
     try:
-        eval_main(eval_args)
-    except Exception as e:
-        print(f"  [错误] 评估失败: {e}")
-        return 0.0
-    
-    # 提取ASR
-    asr = extract_asr_from_summary(output_dir)
-    return asr
+        # 配置target和guard
+        target_cfg = {
+            "model_name": "target",
+            "model_path": "",
+            "host": "127.0.0.1",
+            "port": target_client.port,
+            "gpu_id": "0",
+            "timeout": 900,
+            "gpu_memory_utilization": 0.9,
+            "max_model_len": 4096,
+        }
+        guard_cfg = {
+            "model_name": "guard",
+            "model_path": "",
+            "host": "127.0.0.1",
+            "port": guard_client.port,
+            "gpu_id": "0",
+            "timeout": 900,
+            "gpu_memory_utilization": 0.9,
+            "max_model_len": 4096,
+        }
+
+        # 运行ASR测试
+        metrics = run_asr_test_serial(
+            prompt_path=temp_path,
+            target_client_config=target_cfg,
+            guard_client_config=guard_cfg,
+            output_path=None,  # 不保存报告
+            batch_size=test_batch_size,
+            max_workers=test_max_workers,
+            target_max_tokens=target_max_tokens,
+            target_temperature=target_temperature,
+            guard_max_tokens=guard_max_tokens,
+            guard_temperature=guard_temperature,
+            show_progress=True,
+            sleep_s_between_stage=0.0,
+            save_raw_results=False,
+        )
+        return metrics
+    finally:
+        os.unlink(temp_path)
+
+
+def extract_asr(metrics: Dict) -> float:
+    """从指标中提取ASR"""
+    return metrics.get("asr", 0.0)
 
 
 def filter_results(
@@ -184,21 +232,10 @@ def filter_results(
     topk: Optional[int] = None,
     gap_threshold: Optional[float] = None,
 ) -> List[Tuple[str, float]]:
-    """
-    筛选结果
-    
-    Args:
-        results: [(策略名, ASR)] 列表，已按ASR降序排序
-        baseline_asr: 基线ASR
-        topk: 只保留前K个
-        gap_threshold: 差距阈值
-    
-    Returns:
-        筛选后的结果列表
-    """
+    """筛选结果"""
     if topk is not None:
         return results[:topk]
-    
+
     if gap_threshold is not None:
         filtered = []
         prev_asr = None
@@ -210,8 +247,7 @@ def filter_results(
                 print(f"\n  [Gap筛选] {name} 与上一策略差距为 {prev_asr - asr:.4f} > {gap_threshold}，舍弃及后续策略")
                 break
         return filtered
-    
-    # 没有筛选条件，返回全部
+
     return results
 
 
@@ -226,13 +262,13 @@ def print_results_table(
     print("="*80)
     print(f"{'排名':<6} {'策略':<30} {'ASR':<10} {'vs基线':<10}")
     print("-"*80)
-    
+
     for rank, (name, asr) in enumerate(results, 1):
         vs_baseline = asr - baseline_asr
         sign = "+" if vs_baseline >= 0 else ""
         marker = " *" if filtered_results and (name, asr) not in filtered_results else ""
         print(f"{rank:<6} {name:<30} {asr:<10.4f} {sign}{vs_baseline:.4f}{marker}")
-    
+
     print("="*80)
     if filtered_results:
         print("\n标记 * 的策略被筛选条件舍弃")
@@ -243,7 +279,7 @@ def print_results_table(
 
 def main():
     parser = argparse.ArgumentParser(description="Jailbreak Prompt 实验脚本 - 实验1")
-    
+
     parser.add_argument(
         "--strategies",
         nargs="*",
@@ -254,7 +290,7 @@ def main():
         "--test_set",
         type=str,
         default=None,
-        help="测试集路径 (默认: data/dataset/processed/10k/test.jsonl)",
+        help="测试集路径 (默认: ../data/dataset/processed/10k/test.jsonl)",
     )
     parser.add_argument(
         "--output_dir",
@@ -285,9 +321,9 @@ def main():
         action="store_true",
         help="只打印配置，不实际执行",
     )
-    
+
     args = parser.parse_args()
-    
+
     # 合并配置
     config = dict(DEFAULT_CONFIG)
     if args.test_set:
@@ -296,18 +332,18 @@ def main():
         config["output_root"] = args.output_dir
     if args.sleep_between_evals is not None:
         config["sleep_between_evals"] = args.sleep_between_evals
-    
+
     # 确定要评估的策略
     if args.strategies:
         strategies = args.strategies
     else:
         strategies = get_all_strategy_names()
-    
+
     # 验证策略名称
     for s in strategies:
         if s not in JAILBREAK_PROMPTS:
             raise ValueError(f"未知策略: {s}")
-    
+
     # 打印实验配置
     print("="*80)
     print("Jailbreak Prompt 实验 - 实验1")
@@ -321,7 +357,7 @@ def main():
     if args.gap_threshold:
         print(f"Gap筛选: 差距阈值 = {args.gap_threshold}")
     print("="*80)
-    
+
     # 如果是dry run，只打印配置
     if args.dry_run:
         print("\n[Dry Run] 配置已验证，未实际执行评估")
@@ -330,82 +366,206 @@ def main():
         for s in strategies:
             print(f"  - {s}")
         return
-    
+
     # 创建输出目录
     os.makedirs(config["output_root"], exist_ok=True)
-    
+
     # 记录开始时间
     start_time = time.time()
-    
+
     # =================================================================
-    # Step 1: 测试原始prompt的ASR (基线)
+    # Step 1: 启动所有模型服务 (一次加载，全程复用)
     # =================================================================
     print("\n" + "="*80)
-    print("Step 1/2: 评估基线 - 原始prompt (无重写)")
+    print("Step 1/3: 启动模型服务 (Policy GPU0, Target+Guard GPU1)")
     print("="*80)
-    
+
+    # 设置GPU
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+
+    # 启动Policy (GPU0)
+    print("  启动Policy模型 (GPU0:8003)...")
+    policy_client = VLLMClient(
+        model_name="policy",
+        model_path=config["policy_model"],
+        host="127.0.0.1",
+        port=config["policy_port"],
+        gpu_id="0",  # GPU0
+        launch_server=True,
+        timeout=900,
+        gpu_memory_utilization=0.9,
+        max_model_len=config["max_model_len"],
+        log_file=os.path.join(config["output_root"], "policy_vllm.log"),
+    )
+    print("  Policy启动完成!")
+
+    # 启动Target (GPU1)
+    print("  启动Target模型 (GPU1:8001)...")
+    target_client = VLLMClient(
+        model_name="target",
+        model_path=config["target_model"],
+        host="127.0.0.1",
+        port=config["target_port"],
+        gpu_id="1",  # GPU1
+        launch_server=True,
+        timeout=900,
+        gpu_memory_utilization=0.9,
+        max_model_len=config["max_model_len"],
+        log_file=os.path.join(config["output_root"], "target_vllm.log"),
+    )
+    print("  Target启动完成!")
+
+    # 启动Guard (GPU1)
+    print("  启动Guard模型 (GPU1:8002)...")
+    guard_client = VLLMClient(
+        model_name="guard",
+        model_path=config["guard_model"],
+        host="127.0.0.1",
+        port=config["guard_port"],
+        gpu_id="1",  # GPU1
+        launch_server=True,
+        timeout=900,
+        gpu_memory_utilization=0.9,
+        max_model_len=config["max_model_len"],
+        log_file=os.path.join(config["output_root"], "guard_vllm.log"),
+    )
+    print("  Guard启动完成!")
+
+    # 加载测试集
+    test_items = load_test_set(config["test_set"])
+    test_originals = [it.get("prompt", "") for it in test_items]
+    print(f"\n  加载测试集: {len(test_items)} 条数据")
+
+    # =================================================================
+    # Step 2: 评估基线 (原始prompt)
+    # =================================================================
+    print("\n" + "="*80)
+    print("Step 2/3: 评估基线 - 原始prompt (无重写)")
+    print("="*80)
+
     baseline_output_dir = os.path.join(config["output_root"], "baseline_original")
     os.makedirs(baseline_output_dir, exist_ok=True)
-    
-    baseline_asr = run_eval_for_strategy(
-        strategy_name="baseline_original",
-        test_set=config["test_set"],
-        output_dir=baseline_output_dir,
-        config=config,
-        is_baseline=True,
+
+    # 基线：不重写，直接使用原始prompt
+    baseline_rewritten = [[o] for o in test_originals]
+
+    baseline_metrics = run_asr_test(
+        target_client=target_client,
+        guard_client=guard_client,
+        originals=test_originals,
+        rewritten_buckets=baseline_rewritten,
+        test_batch_size=config.get("test_batch_size", 64),
+        test_max_workers=config.get("test_max_workers", 16),
+        target_max_tokens=config.get("target_max_tokens", 512),
+        target_temperature=config.get("target_temperature", 0.0),
+        guard_max_tokens=config.get("guard_max_tokens", 256),
+        guard_temperature=config.get("guard_temperature", 0.0),
     )
-    
+
+    baseline_asr = extract_asr(baseline_metrics)
     print(f"\n  基线ASR: {baseline_asr:.4f}")
-    
-    # 等待
-    if config["sleep_between_evals"] > 0:
-        print(f"  等待 {config['sleep_between_evals']} 秒...")
-        time.sleep(config["sleep_between_evals"])
-    
+
+    # 保存基线结果
+    baseline_result = {
+        "strategy": "baseline_original",
+        "asr": baseline_asr,
+        "metrics": baseline_metrics,
+    }
+    with open(os.path.join(baseline_output_dir, "result.json"), "w", encoding="utf-8") as f:
+        json.dump(baseline_result, f, ensure_ascii=False, indent=2)
+
     # =================================================================
-    # Step 2: 依次评估各策略
+    # Step 3: 依次评估各策略
     # =================================================================
     print("\n" + "="*80)
-    print(f"Step 2/2: 评估 {len(strategies)} 个策略")
+    print(f"Step 3/3: 评估 {len(strategies)} 个策略")
     print("="*80)
-    
+
     results = []
     sleep_time = config["sleep_between_evals"]
-    
+
     # 使用tqdm显示进度
     for idx, strategy_name in enumerate(tqdm(strategies, desc="评估策略", unit="策略")):
         strategy_output_dir = os.path.join(config["output_root"], strategy_name)
         os.makedirs(strategy_output_dir, exist_ok=True)
-        
-        asr = run_eval_for_strategy(
-            strategy_name=strategy_name,
-            test_set=config["test_set"],
-            output_dir=strategy_output_dir,
-            config=config,
-            is_baseline=False,
+
+        # 获取策略模板
+        strategy_template = get_strategy_template(strategy_name)
+
+        # 重写
+        rewritten = run_rewrite(
+            policy_client=policy_client,
+            originals=test_originals,
+            prompt_template=strategy_template,
+            k=config.get("k", 1),
+            temperature=config.get("rewrite_temperature", 0.7),
+            max_tokens=config.get("rewrite_max_tokens", 2048),
         )
-        
+
+        # ASR测试
+        metrics = run_asr_test(
+            target_client=target_client,
+            guard_client=guard_client,
+            originals=test_originals,
+            rewritten_buckets=rewritten,
+            test_batch_size=config.get("test_batch_size", 64),
+            test_max_workers=config.get("test_max_workers", 16),
+            target_max_tokens=config.get("target_max_tokens", 512),
+            target_temperature=config.get("target_temperature", 0.0),
+            guard_max_tokens=config.get("guard_max_tokens", 256),
+            guard_temperature=config.get("guard_temperature", 0.0),
+        )
+
+        asr = extract_asr(metrics)
         results.append((strategy_name, asr))
-        
+
+        # 保存策略结果
+        strategy_result = {
+            "strategy": strategy_name,
+            "asr": asr,
+            "metrics": metrics,
+        }
+        with open(os.path.join(strategy_output_dir, "result.json"), "w", encoding="utf-8") as f:
+            json.dump(strategy_result, f, ensure_ascii=False, indent=2)
+
         # 等待
         if idx < len(strategies) - 1 and sleep_time > 0:
             time.sleep(sleep_time)
-    
+
+    # =================================================================
+    # Step 4: 关闭所有服务
+    # =================================================================
+    print("\n" + "="*80)
+    print("关闭所有模型服务...")
+    print("="*80)
+
+    print("  关闭Policy...")
+    policy_client.close()
+    print("  关闭Target...")
+    target_client.close()
+    print("  关闭Guard...")
+    guard_client.close()
+
+    gc.collect()
+    import torch
+    torch.cuda.empty_cache()
+    print("  所有服务已关闭!")
+
     # 记录结束时间
     elapsed = time.time() - start_time
     hours, remainder = divmod(int(elapsed), 3600)
     minutes, seconds = divmod(remainder, 60)
-    
+
     # =================================================================
-    # Step 3: 结果筛选与汇总
+    # Step 5: 结果筛选与汇总
     # =================================================================
     print("\n" + "="*80)
-    print("Step 3/3: 结果筛选与汇总")
+    print("Step 5/5: 结果筛选与汇总")
     print("="*80)
-    
+
     # 按ASR降序排序
     sorted_results = sorted(results, key=lambda x: x[1], reverse=True)
-    
+
     # 应用筛选逻辑
     filtered_results = filter_results(
         sorted_results,
@@ -413,10 +573,10 @@ def main():
         topk=args.topk,
         gap_threshold=args.gap_threshold,
     )
-    
+
     # 打印结果表格
     print_results_table(sorted_results, baseline_asr, filtered_results)
-    
+
     # 保存汇总结果
     summary = {
         "experiment": "jailbreak_prompt_exp_1",
@@ -435,11 +595,11 @@ def main():
             "seconds": seconds,
         },
     }
-    
+
     summary_path = os.path.join(config["output_root"], "experiment_summary.json")
     with open(summary_path, "w", encoding="utf-8") as f:
         json.dump(summary, f, ensure_ascii=False, indent=2)
-    
+
     print(f"\n汇总结果已保存: {summary_path}")
     print(f"\n实验完成! 总耗时: {hours}小时 {minutes}分钟 {seconds}秒")
 

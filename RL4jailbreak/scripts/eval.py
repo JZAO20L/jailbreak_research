@@ -152,7 +152,7 @@ def run_single_eval(
     # rewrite params
     k: int = 1,
     rewrite_temperature: float = 0.7,
-    rewrite_max_tokens: int = 1024,
+    rewrite_max_tokens: int = 2048,
     rewrite_max_workers: int = 16,
     rewrite_batch_size: int = 64,
     # ASR test params
@@ -163,34 +163,26 @@ def run_single_eval(
     guard_max_tokens: int = 256,
     guard_temperature: float = 0.0,
     gpu_memory_utilization: float = 0.9,
-    max_model_len: int = 2048,
+    max_model_len: int = 4096,
     timeout: int = 900,
     sleep_between_stage: float = 5.0,
 ) -> Dict[str, Any]:
     """
-    执行单次评估:
-    1. 启动 policy (GPU0) -> 重写 prompts
-    2. 启动 target (GPU1) + guard (GPU1) -> ASR 测试
+    执行单次评估 (使用已存在的服务，不加载/卸载模型):
+    1. 连接 policy (GPU0) -> 重写 prompts
+    2. 连接 target (GPU1) + guard (GPU1) -> ASR 测试
     """
     lora_label = "base" if lora_path is None else safe_name(os.path.basename(lora_path.rstrip("/")))
 
-    # ---- Step 1: Policy 重写 ----
-    logger.info(f"[1/4] Launch policy vLLM (GPU0): lora={lora_label}")
+    # ---- Step 1: 连接已启动的 Policy (GPU0) ----
+    logger.info(f"[1/4] Connect to policy vLLM (GPU0:{policy_port}): lora={lora_label}")
     policy_client = VLLMClient(
         model_name="policy",
         model_path=base_model_path,
         host=host,
         port=policy_port,
-        gpu_id="0",
-        launch_server=True,
+        launch_server=False,  # 不启动服务，只连接
         timeout=timeout,
-        gpu_memory_utilization=gpu_memory_utilization,
-        max_model_len=max_model_len,
-        log_file=os.path.join(out_dir, "logs/policy_vllm.log"),
-        enable_lora=(lora_path is not None),
-        lora_path=lora_path,
-        lora_name="lora",
-        max_lora_rank=32,
     )
 
     # 临时替换全局 REWRITE_PROMPT
@@ -218,9 +210,9 @@ def run_single_eval(
         if original_rewrite_prompt is not None:
             import src.generate as gen_mod
             gen_mod.REWRITE_PROMPT = original_rewrite_prompt
-        policy_client.close()
-        gc.collect()
-        logger.info(f"[2/4] Policy vLLM closed (lora={lora_label})")
+        # 不关闭服务，因为服务是外部的
+        policy_client = None  # 释放引用
+        logger.info(f"[2/4] Policy rewrite done (lora={lora_label})")
 
     # 收集重写后的 prompts
     rewritten_rows: List[Dict[str, Any]] = []
@@ -245,8 +237,8 @@ def run_single_eval(
     write_jsonl(rewritten_jsonl, rewritten_rows)
     logger.info(f"[2/4] Rewritten: {n_written} prompts -> {rewritten_jsonl}")
 
-    # ---- Step 2: Target + Guard ASR 测试 ----
-    logger.info(f"[3/4] Run ASR test (GPU1): lora={lora_label}")
+    # ---- Step 2: 连接已启动的 Target + Guard (GPU1) 进行 ASR 测试 ----
+    logger.info(f"[3/4] Connect to ASR test services (GPU1:{target_port}/{guard_port}): lora={lora_label}")
     target_cfg = {
         "model_name": "target",
         "model_path": target_model_path,
@@ -256,7 +248,6 @@ def run_single_eval(
         "timeout": timeout,
         "gpu_memory_utilization": gpu_memory_utilization,
         "max_model_len": max_model_len,
-        "log_file": os.path.join(out_dir, "logs/target_vllm.log"),
     }
     guard_cfg = {
         "model_name": "guard",
@@ -267,7 +258,6 @@ def run_single_eval(
         "timeout": timeout,
         "gpu_memory_utilization": gpu_memory_utilization,
         "max_model_len": max_model_len,
-        "log_file": os.path.join(out_dir, "logs/guard_vllm.log"),
     }
 
     test_report_path = os.path.join(out_dir, f"asr_report_{lora_label}.json")
