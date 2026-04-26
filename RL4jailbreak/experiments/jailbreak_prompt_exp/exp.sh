@@ -145,8 +145,10 @@ START_TIME=$(date +%s)
 # ----------------------------------------------------------------
 log "Step 1/3: 启动模型服务..."
 
-# 设置 OMP_NUM_THREADS (避免 libgomp 报错)
+# 设置环境变量
 export OMP_NUM_THREADS=64
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
 
 log "启动Policy (GPU0:$POLICY_PORT)..."
 CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
