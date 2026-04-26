@@ -141,12 +141,202 @@ print_progress() {
     local pct=$((current * 100 / total))
     local filled=$((pct / 2))
     local empty=$((50 - filled))
-    
+
     printf -v bar '%*s' "$filled" ''
     bar=${bar// /#}
     printf -v spaces '%*s' "$empty" ''
-    
+
     printf "\r  [%s%s] %d%% (%d/%d)" "$bar" "$spaces" "$pct" "$current" "$total"
+}
+
+# =============================================================================
+# GPU状态检查和模型加载函数
+# =============================================================================
+
+# 检查GPU1状态
+check_gpu1_status() {
+    local gpu1_memory
+    gpu1_memory=$(nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits -i 1 2>/dev/null | tr -d '[:space:]')
+
+    if [ -z "$gpu1_memory" ]; then
+        echo "error"
+        return 1
+    fi
+
+    if [ "$gpu1_memory" -lt 2000 ]; then
+        echo "idle"
+    elif [ "$gpu1_memory" -gt 15000 ]; then
+        echo "loaded"
+    else
+        echo "busy"
+    fi
+}
+
+# 检查指定端口是否有vLLM服务在运行
+check_port_active() {
+    local port=$1
+    if curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/health" 2>/dev/null | grep -q "200"; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# 释放GPU1显存
+release_gpu1_memory() {
+    log "检查GPU1状态..."
+
+    local status
+    status=$(check_gpu1_status)
+    log "GPU1当前状态: $status"
+
+    case $status in
+        "idle")
+            log "GPU1空闲,无需释放"
+            ;;
+        "loaded")
+            log "GPU1已加载模型,检查服务是否活跃..."
+
+            local target_active=false
+            local guard_active=false
+
+            if check_port_active "$TARGET_PORT"; then
+                target_active=true
+                log "Target服务已在端口 $TARGET_PORT 运行"
+            fi
+
+            if check_port_active "$GUARD_PORT"; then
+                guard_active=true
+                log "Guard服务已在端口 $GUARD_PORT 运行"
+            fi
+
+            if $target_active && $guard_active; then
+                log "所有服务已就绪,无需重新启动"
+                return 0
+            else
+                log "部分服务未就绪,需要重新启动"
+                return 1
+            fi
+            ;;
+        "busy")
+            log "GPU1非空闲但可能没加载目标模型"
+            log "建议手动检查或重启服务"
+            return 1
+            ;;
+        "error")
+            log "无法获取GPU状态"
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
+# 启动Target模型服务 (GPU1)
+start_target_service() {
+    log "启动Target模型服务 (端口: $TARGET_PORT)..."
+
+    if check_port_active "$TARGET_PORT"; then
+        log "Target服务已在运行,跳过启动"
+        return 0
+    fi
+
+    if [ -f "$BASE_DIR/scripts/start_target.sh" ]; then
+        log "执行 start_target.sh..."
+        bash "$BASE_DIR/scripts/start_target.sh" --port "$TARGET_PORT" --gpu 1 &
+
+        log "等待Target服务启动..."
+        for i in $(seq 1 60); do
+            if check_port_active "$TARGET_PORT"; then
+                log "Target服务启动成功!"
+                return 0
+            fi
+            sleep 2
+        done
+
+        log "Target服务启动超时!"
+        return 1
+    else
+        log "错误: 找不到 start_target.sh 脚本"
+        log "请手动启动Target模型服务到端口 $TARGET_PORT"
+        return 1
+    fi
+}
+
+# 启动Guard模型服务 (GPU1)
+start_guard_service() {
+    log "启动Guard模型服务 (端口: $GUARD_PORT)..."
+
+    if check_port_active "$GUARD_PORT"; then
+        log "Guard服务已在运行,跳过启动"
+        return 0
+    fi
+
+    if [ -f "$BASE_DIR/scripts/start_guard.sh" ]; then
+        log "执行 start_guard.sh..."
+        bash "$BASE_DIR/scripts/start_guard.sh" --port "$GUARD_PORT" --gpu 1 &
+
+        log "等待Guard服务启动..."
+        for i in $(seq 1 60); do
+            if check_port_active "$GUARD_PORT"; then
+                log "Guard服务启动成功!"
+                return 0
+            fi
+            sleep 2
+        done
+
+        log "Guard服务启动超时!"
+        return 1
+    else
+        log "错误: 找不到 start_guard.sh 脚本"
+        log "请手动启动Guard模型服务到端口 $GUARD_PORT"
+        return 1
+    fi
+}
+
+# 启动Policy模型服务 (GPU0)
+start_policy_service() {
+    log "启动Policy模型服务 (端口: $POLICY_PORT)..."
+
+    if check_port_active "$POLICY_PORT"; then
+        log "Policy服务已在运行,跳过启动"
+        return 0
+    fi
+
+    if [ -f "$BASE_DIR/scripts/start_policy.sh" ]; then
+        log "执行 start_policy.sh..."
+        bash "$BASE_DIR/scripts/start_policy.sh" --port "$POLICY_PORT" --gpu 0 &
+
+        log "等待Policy服务启动..."
+        for i in $(seq 1 60); do
+            if check_port_active "$POLICY_PORT"; then
+                log "Policy服务启动成功!"
+                return 0
+            fi
+            sleep 2
+        done
+
+        log "Policy服务启动超时!"
+        return 1
+    else
+        log "错误: 找不到 start_policy.sh 脚本"
+        log "请手动启动Policy模型服务到端口 $POLICY_PORT"
+        return 1
+    fi
+}
+
+# 确保所有需要的服务都在运行
+ensure_services_running() {
+    log "============================================================"
+    log "确保模型服务就绪..."
+    log "============================================================"
+
+    release_gpu1_memory
+    start_target_service
+    start_guard_service
+    start_policy_service
+
+    log "所有服务检查完成!"
 }
 
 # 从eval结果中提取ASR
@@ -203,6 +393,11 @@ log "============================================================"
 
 # 创建实验输出目录
 mkdir -p "$OUTPUT_DIR"
+
+# ----------------------------------------------------------------
+# Step 0: 确保模型服务就绪
+# ----------------------------------------------------------------
+ensure_services_running
 
 # 记录实验开始时间
 START_TIME=$(date +%s)
