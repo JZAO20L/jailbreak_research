@@ -80,6 +80,22 @@ DEFAULT_CONFIG = {
 }
 
 
+def load_checkpoint(output_root: str) -> Dict:
+    """加载检查点"""
+    ckpt_path = os.path.join(output_root, "checkpoint.json")
+    if os.path.exists(ckpt_path):
+        with open(ckpt_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {"completed": [], "results": [], "baseline_asr": None}
+
+
+def save_checkpoint(output_root: str, ckpt: Dict) -> None:
+    """保存检查点"""
+    ckpt_path = os.path.join(output_root, "checkpoint.json")
+    with open(ckpt_path, "w", encoding="utf-8") as f:
+        json.dump(ckpt, f, ensure_ascii=False, indent=2)
+
+
 def load_test_set(path: str) -> List[Dict]:
     """加载测试集"""
     items = []
@@ -375,6 +391,16 @@ def main():
     test_originals = [it.get("prompt", "") for it in test_items]
     print(f"\n  加载测试集: {len(test_items)} 条数据")
 
+    # 加载检查点
+    ckpt = load_checkpoint(config["output_root"])
+    completed_strategies = set(ckpt.get("completed", []))
+    results = list(ckpt.get("results", []))
+    baseline_asr = ckpt.get("baseline_asr")
+
+    if completed_strategies:
+        print(f"  检测到检查点: 已完成 {len(completed_strategies)} 个策略")
+        print(f"  将跳过已完成的策略，继续未完成的部分")
+
     # =================================================================
     # Step 2: 评估基线 (原始prompt)
     # =================================================================
@@ -385,43 +411,50 @@ def main():
     baseline_output_dir = os.path.join(config["output_root"], "baseline_original")
     os.makedirs(baseline_output_dir, exist_ok=True)
 
-    baseline_rewritten = [[o] for o in test_originals]
+    if baseline_asr is None:
+        baseline_rewritten = [[o] for o in test_originals]
 
-    baseline_metrics = run_asr_test(
-        target_client=target_client,
-        guard_client=guard_client,
-        originals=test_originals,
-        rewritten_buckets=baseline_rewritten,
-        test_batch_size=config.get("test_batch_size", 64),
-        test_max_workers=config.get("test_max_workers", 16),
-        target_max_tokens=config.get("target_max_tokens", 512),
-        target_temperature=config.get("target_temperature", 0.0),
-        guard_max_tokens=config.get("guard_max_tokens", 256),
-        guard_temperature=config.get("guard_temperature", 0.0),
-    )
+        baseline_metrics = run_asr_test(
+            target_client=target_client,
+            guard_client=guard_client,
+            originals=test_originals,
+            rewritten_buckets=baseline_rewritten,
+            test_batch_size=config.get("test_batch_size", 64),
+            test_max_workers=config.get("test_max_workers", 16),
+            target_max_tokens=config.get("target_max_tokens", 512),
+            target_temperature=config.get("target_temperature", 0.0),
+            guard_max_tokens=config.get("guard_max_tokens", 256),
+            guard_temperature=config.get("guard_temperature", 0.0),
+        )
 
-    baseline_asr = baseline_metrics.get("asr", 0.0)
-    print(f"\n  基线ASR: {baseline_asr:.4f}")
+        baseline_asr = baseline_metrics.get("asr", 0.0)
+        print(f"\n  基线ASR: {baseline_asr:.4f}")
 
-    baseline_result = {
-        "strategy": "baseline_original",
-        "asr": baseline_asr,
-        "metrics": baseline_metrics,
-    }
-    with open(os.path.join(baseline_output_dir, "result.json"), "w", encoding="utf-8") as f:
-        json.dump(baseline_result, f, ensure_ascii=False, indent=2)
+        baseline_result = {
+            "strategy": "baseline_original",
+            "asr": baseline_asr,
+            "metrics": baseline_metrics,
+        }
+        with open(os.path.join(baseline_output_dir, "result.json"), "w", encoding="utf-8") as f:
+            json.dump(baseline_result, f, ensure_ascii=False, indent=2)
+
+        # 保存检查点
+        ckpt["baseline_asr"] = baseline_asr
+        save_checkpoint(config["output_root"], ckpt)
+    else:
+        print(f"  基线已完成 (ASR: {baseline_asr:.4f})，跳过")
 
     # =================================================================
-    # Step 3: 依次评估各策略
+    # Step 3: 依次评估各策略 (跳过已完成的)
     # =================================================================
+    remaining = [s for s in strategies if s not in completed_strategies]
     print("\n" + "="*80)
-    print(f"Step 3/3: 评估 {len(strategies)} 个策略")
+    print(f"Step 3/3: 评估 {len(remaining)} 个策略 (跳过 {len(completed_strategies)} 个已完成)")
     print("="*80)
 
-    results = []
     sleep_time = config["sleep_between_evals"]
 
-    for idx, strategy_name in enumerate(tqdm(strategies, desc="评估策略", unit="策略")):
+    for idx, strategy_name in enumerate(tqdm(remaining, desc="评估策略", unit="策略")):
         strategy_output_dir = os.path.join(config["output_root"], strategy_name)
         os.makedirs(strategy_output_dir, exist_ok=True)
 
@@ -462,7 +495,13 @@ def main():
         with open(os.path.join(strategy_output_dir, "result.json"), "w", encoding="utf-8") as f:
             json.dump(strategy_result, f, ensure_ascii=False, indent=2)
 
-        if idx < len(strategies) - 1 and sleep_time > 0:
+        # 更新检查点
+        completed_strategies.add(strategy_name)
+        ckpt["completed"] = list(completed_strategies)
+        ckpt["results"] = results
+        save_checkpoint(config["output_root"], ckpt)
+
+        if idx < len(remaining) - 1 and sleep_time > 0:
             time.sleep(sleep_time)
 
     # 记录结束时间
