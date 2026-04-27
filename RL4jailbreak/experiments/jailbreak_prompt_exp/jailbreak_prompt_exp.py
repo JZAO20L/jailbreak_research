@@ -639,6 +639,14 @@ def main():
 
     print_results_table(sorted_results, baseline_asr, filtered_results)
 
+    # 收集所有策略的混淆矩阵
+    confusion_all = {}
+    for name, _ in sorted_results:
+        cm_path = os.path.join(config["output_root"], name, "confusion_matrix.json")
+        if os.path.exists(cm_path):
+            with open(cm_path, "r", encoding="utf-8") as f:
+                confusion_all[name] = json.load(f)
+
     summary = {
         "experiment": "jailbreak_prompt_exp_1",
         "timestamp": datetime.datetime.now().isoformat(),
@@ -646,6 +654,7 @@ def main():
         "baseline_asr": baseline_asr,
         "all_results": {name: asr for name, asr in sorted_results},
         "filtered_results": {name: asr for name, asr in filtered_results},
+        "confusion_matrices": confusion_all,
         "filter_criteria": {
             "topk": args.topk,
             "gap_threshold": args.gap_threshold,
