@@ -312,6 +312,7 @@ def run_asr_test_serial(
     }
     if save_raw_results:
         out_obj["results"] = items
+        metrics["results"] = items  # 也添加到返回的metrics中
 
     if output_path:
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
