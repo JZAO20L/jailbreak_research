@@ -505,6 +505,7 @@ def main():
 
     if baseline_asr is None:
         baseline_rewritten = [[o] for o in test_originals]
+        baseline_raw_path = os.path.join(baseline_output_dir, "raw_results.json")
 
         baseline_metrics = run_asr_test(
             target_client=target_client,
@@ -517,6 +518,8 @@ def main():
             target_temperature=config.get("target_temperature", 0.0),
             guard_max_tokens=config.get("guard_max_tokens", 256),
             guard_temperature=config.get("guard_temperature", 0.0),
+            save_raw_results=True,
+            raw_output_path=baseline_raw_path,
         )
 
         baseline_asr = baseline_metrics.get("overall", {}).get("asr", 0.0)
