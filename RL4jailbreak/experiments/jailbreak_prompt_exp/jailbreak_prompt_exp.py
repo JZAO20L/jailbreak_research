@@ -96,6 +96,87 @@ def save_checkpoint(output_root: str, ckpt: Dict) -> None:
         json.dump(ckpt, f, ensure_ascii=False, indent=2)
 
 
+def compute_confusion_matrix(baseline_raw_path: str, strategy_raw_path: str) -> Dict:
+    """计算原始prompt vs 新prompt的混淆矩阵"""
+    if not os.path.exists(baseline_raw_path) or not os.path.exists(strategy_raw_path):
+        return {}
+
+    with open(baseline_raw_path, "r", encoding="utf-8") as f:
+        baseline_results = json.load(f)
+    with open(strategy_raw_path, "r", encoding="utf-8") as f:
+        strategy_results = json.load(f)
+
+    baseline_map = {r["id"]: r for r in baseline_results}
+
+    confusion = {
+        "fail_to_success": 0,
+        "success_to_success": 0,
+        "fail_to_fail": 0,
+        "success_to_fail": 0,
+        "details": [],
+    }
+
+    for sr in strategy_results:
+        sid = sr["id"]
+        br = baseline_map.get(sid)
+        if not br:
+            continue
+
+        orig_success = br.get("guard_label") == "success"
+        new_success = sr.get("guard_label") == "success"
+
+        if not orig_success and new_success:
+            confusion["fail_to_success"] += 1
+            case = "fail_to_success"
+        elif orig_success and new_success:
+            confusion["success_to_success"] += 1
+            case = "success_to_success"
+        elif not orig_success and not new_success:
+            confusion["fail_to_fail"] += 1
+            case = "fail_to_fail"
+        else:
+            confusion["success_to_fail"] += 1
+            case = "success_to_fail"
+
+        confusion["details"].append({
+            "id": sid,
+            "original_prompt": sr.get("original_prompt", ""),
+            "rewritten_prompt": sr.get("prompt", ""),
+            "original_success": orig_success,
+            "new_success": new_success,
+            "case": case,
+        })
+
+    confusion["total"] = len(confusion["details"])
+    return confusion
+
+
+def print_confusion_matrix(confusion: Dict):
+    """打印混淆矩阵"""
+    if not confusion:
+        return
+    total = confusion.get("total", 0)
+    if total == 0:
+        return
+
+    f2s = confusion["fail_to_success"]
+    s2s = confusion["success_to_success"]
+    f2f = confusion["fail_to_fail"]
+    s2f = confusion["success_to_fail"]
+    lift = f2s - s2f
+
+    print("\n" + "="*60)
+    print("混淆矩阵 (原始 vs 新prompt)")
+    print("="*60)
+    print(f"{'':>20} {'新prompt成功':>15} {'新prompt失败':>15}")
+    print(f"{'原始prompt成功':>20} {s2s:>10} ({s2s/total*100:.1f}%) {s2f:>10} ({s2f/total*100:.1f}%)")
+    print(f"{'原始prompt失败':>20} {f2s:>10} ({f2s/total*100:.1f}%) {f2f:>10} ({f2f/total*100:.1f}%)")
+    print("-"*60)
+    print(f"总样本数: {total}")
+    print(f"Lift: {lift:+d} ({lift/total*100:+.1f}%)")
+    print("="*60)
+
+
 def load_test_set(path: str) -> List[Dict]:
     """加载测试集"""
     items = []
@@ -508,6 +589,23 @@ def main():
         }
         with open(os.path.join(strategy_output_dir, "result.json"), "w", encoding="utf-8") as f:
             json.dump(strategy_result, f, ensure_ascii=False, indent=2)
+
+        # 计算混淆矩阵
+        baseline_raw_path = os.path.join(config["output_root"], "baseline_original", "raw_results.json")
+        confusion = compute_confusion_matrix(baseline_raw_path, raw_output_path)
+        if confusion:
+            print_confusion_matrix(confusion)
+            # 保存混淆矩阵
+            confusion_summary = {
+                "fail_to_success": confusion["fail_to_success"],
+                "success_to_success": confusion["success_to_success"],
+                "fail_to_fail": confusion["fail_to_fail"],
+                "success_to_fail": confusion["success_to_fail"],
+                "total": confusion["total"],
+                "lift": confusion["fail_to_success"] - confusion["success_to_fail"],
+            }
+            with open(os.path.join(strategy_output_dir, "confusion_matrix.json"), "w", encoding="utf-8") as f:
+                json.dump(confusion_summary, f, ensure_ascii=False, indent=2)
 
         # 更新检查点
         completed_strategies.add(strategy_name)
