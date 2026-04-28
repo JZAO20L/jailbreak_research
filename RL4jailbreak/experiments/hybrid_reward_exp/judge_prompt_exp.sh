@@ -193,9 +193,24 @@ ensure_services_running() {
     log "============================================================"
     log "确保GPU1上的服务就绪..."
     log "============================================================"
-    release_gpu1_memory
+
+    # 清理GPU上的残留进程
+    log "清理GPU上的残留vLLM进程..."
+    pkill -9 -f "vllm serve" 2>/dev/null || true
+    sleep 3
+
+    # 释放显存
+    python -c "import torch; torch.cuda.empty_cache()" 2>/dev/null || true
+    sleep 2
+
+    log "GPU清理完成"
+
+    # 启动Target服务
     start_target_service
+
+    # 启动Guard服务
     start_guard_service
+
     log "所有服务检查完成!"
 }
 

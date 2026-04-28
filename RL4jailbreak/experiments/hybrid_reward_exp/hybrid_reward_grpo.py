@@ -141,8 +141,7 @@ def parse_args():
 
     # 实验2专用
     parser.add_argument("--judge_prompt", type=str, default=DEFAULT_ARGS["judge_prompt"],
-                        choices=list(JUDGE_PROMPTS.keys()),
-                        help="Judge prompt维度 (实验2)")
+                        help="Judge prompt维度 (实验2), 可以是基础名如idea_preservation, 也可以是完整名如idea_preservation_single")
     parser.add_argument("--scoring_method", type=str, default=DEFAULT_ARGS["scoring_method"],
                         choices=["single", "tournament"],
                         help="评分方式: single=单条打分, tournament=锦标赛")
@@ -161,7 +160,18 @@ def parse_args():
     parser.add_argument("--save_steps", type=int, default=DEFAULT_ARGS["save_steps"])
     parser.add_argument("--max_steps", type=int, default=DEFAULT_ARGS["max_steps"])
 
-    return parser.parse_args()
+    parsed = parser.parse_args()
+
+    # 拼接 judge_prompt + _ + scoring_method 得到完整key
+    if not parsed.judge_prompt.endswith("_" + parsed.scoring_method):
+        full_key = f"{parsed.judge_prompt}_{parsed.scoring_method}"
+        if full_key in JUDGE_PROMPTS:
+            parsed.judge_prompt = full_key
+        else:
+            raise ValueError(f"Unknown judge prompt: '{parsed.judge_prompt}'. "
+                           f"Available: {list(JUDGE_PROMPTS.keys())}")
+
+    return parsed
 
 
 # =============================================================================
@@ -444,6 +454,7 @@ def main():
 
     # GRPO Config
     run_name = args.run_name or f"{args.experiment}_{args.judge_prompt}_{args.scoring_method}"
+    run_name = run_name.replace(f"_{args.scoring_method}_{args.scoring_method}", f"_{args.scoring_method}")
     grpo_cfg = GRPOConfig(
         output_dir=args.output_dir,
         per_device_train_batch_size=args.per_device_train_batch_size,
