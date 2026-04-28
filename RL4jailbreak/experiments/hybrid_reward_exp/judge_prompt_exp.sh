@@ -42,7 +42,6 @@ BETA="${BETA:-0.05}"
 # 奖励权重 (实验2固定为1:1)
 ASR_WEIGHT=0.5
 JUDGE_WEIGHT=0.5
-FORMAT_WEIGHT=0.1
 
 # =========================
 # 策略 × 维度定义
@@ -219,7 +218,7 @@ log "每策略维度: $DIMENSIONS_PER_STRATEGY (3通用+1专用)"
 log "评分方式: ${SCORING_METHODS[*]}"
 log "总实验数: $TOTAL_EXPS"
 log "每实验步数: $MAX_STEPS"
-log "奖励权重: ASR=$ASR_WEIGHT, Judge=$JUDGE_WEIGHT, Format=$FORMAT_WEIGHT"
+log "奖励权重: ASR=$ASR_WEIGHT, Judge=$JUDGE_WEIGHT"
 log "============================================================"
 
 mkdir -p "$OUTPUT_DIR"
@@ -276,7 +275,6 @@ for strategy in "${STRATEGIES[@]}"; do
                 --guard_port "$GUARD_PORT" \
                 --asr_weight "$ASR_WEIGHT" \
                 --judge_weight "$JUDGE_WEIGHT" \
-                --format_weight "$FORMAT_WEIGHT" \
                 --max_steps "$MAX_STEPS" \
                 --learning_rate "$LEARNING_RATE" \
                 --num_generations "$NUM_GENERATIONS" \

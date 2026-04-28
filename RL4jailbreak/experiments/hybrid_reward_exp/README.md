@@ -30,8 +30,10 @@
 
 ### 实验配置
 
-- ASR reward : Judge reward = 1:1 (固定)
-- 每实验训练1000步
+- 总奖励 = Judge_Reward + ASR_Reward (无 Format_Reward)
+- 实验2: Judge:ASR = 1:1 (固定)
+- 实验3: 测试不同 Judge:ASR 比例
+- 每实验训练500步 (筛选阶段)
 - 训练后在eval集上进行ASR评测
 
 ### 使用方法
@@ -79,12 +81,12 @@ judge_prompt_exp_output/
 
 ### 权重比例
 
-测试5种比例 (Judge : ASR，总和为0.9，另加Format=0.1):
-- Judge=0.1, ASR=0.8 (2:8)
-- Judge=0.3, ASR=0.6 (4:6)
-- Judge=0.5, ASR=0.4 (5:5，实验2已做)
-- Judge=0.7, ASR=0.2 (6:4)
-- Judge=0.9, ASR=0.0 (8:2)
+测试5种比例 (Judge : ASR, 总和为1.0):
+- Judge=0.1, ASR=0.9 (1:9)
+- Judge=0.3, ASR=0.7 (3:7)
+- Judge=0.5, ASR=0.5 (5:5，实验2已做)
+- Judge=0.7, ASR=0.3 (7:3)
+- Judge=0.9, ASR=0.1 (9:1)
 
 ### 实验配置
 
@@ -163,7 +165,6 @@ python experiments/hybrid_reward_exp/hybrid_reward_grpo.py \
 - `--scoring_method`: 评分方式 (single/tournament)
 - `--asr_weight`: ASR reward权重
 - `--judge_weight`: Judge reward权重
-- `--format_weight`: Format reward权重 (固定0.1)
 - `--max_steps`: 最大训练步数
 - `--learning_rate`: 学习率
 - `--num_generations`: 每个prompt生成数量

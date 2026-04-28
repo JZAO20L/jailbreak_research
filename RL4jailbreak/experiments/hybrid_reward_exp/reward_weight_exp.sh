@@ -41,9 +41,6 @@ LEARNING_RATE="${LEARNING_RATE:-1e-5}"
 NUM_GENERATIONS="${NUM_GENERATIONS:-8}"
 BETA="${BETA:-0.05}"
 
-# Format reward权重 (固定)
-FORMAT_WEIGHT=0.1
-
 # 默认judge prompt和评分方式 (可通过命令行修改)
 JUDGE_PROMPT="${JUDGE_PROMPT:-stealthiness}"
 SCORING_METHOD="${SCORING_METHOD:-single}"
@@ -53,11 +50,7 @@ SCORING_METHOD="${SCORING_METHOD:-single}"
 # =========================
 # 实验2已做了5:5的情况
 # 实验3测试: 2:8, 4:6, 6:4, 8:2
-# 注意: 这里只存储judge_weight，asr_weight = 1 - judge_weight - format_weight
-# 但由于format_weight=0.1，所以实际比例需要调整
-#
-# 简化处理: 我们直接设置judge_weight和asr_weight，让它们的和为0.9
-# 这样加上format_weight=0.1后总和为1.0
+# judge_weight + asr_weight = 1.0
 
 # 如果传入了命令行参数，使用指定的权重
 if [ $# -ge 2 ]; then
@@ -66,7 +59,7 @@ if [ $# -ge 2 ]; then
     echo "运行指定权重: judge_weight=$1, asr_weight=$2"
 else
     # 默认权重列表 (judge_weight)
-    # 对应的asr_weight = 0.9 - judge_weight
+    # 对应的asr_weight = 1 - judge_weight
     JUDGE_WEIGHTS=(0.1 0.3 0.5 0.7 0.9)
 fi
 
@@ -267,7 +260,6 @@ log "Judge Prompt: $JUDGE_PROMPT"
 log "评分方式: $SCORING_METHOD"
 log "权重比例数: $TOTAL_EXPS"
 log "每实验步数: $MAX_STEPS"
-log "Format Weight: $FORMAT_WEIGHT (固定)"
 log "============================================================"
 
 # 创建输出目录
@@ -289,8 +281,8 @@ declare -a RESULTS
 # ----------------------------------------------------------------
 EXP_IDX=0
 for judge_weight in "${JUDGE_WEIGHTS[@]}"; do
-    # 计算asr_weight (总和为0.9，剩下的0.1给format)
-    asr_weight=$(echo "0.9 - $judge_weight" | bc)
+    # 计算asr_weight (总和为1.0)
+    asr_weight=$(echo "1 - $judge_weight" | bc)
     
     EXP_IDX=$((EXP_IDX + 1))
 
@@ -321,7 +313,6 @@ for judge_weight in "${JUDGE_WEIGHTS[@]}"; do
         --guard_port "$GUARD_PORT" \
         --asr_weight "$asr_weight" \
         --judge_weight "$judge_weight" \
-        --format_weight "$FORMAT_WEIGHT" \
         --max_steps "$MAX_STEPS" \
         --learning_rate "$LEARNING_RATE" \
         --num_generations "$NUM_GENERATIONS" \

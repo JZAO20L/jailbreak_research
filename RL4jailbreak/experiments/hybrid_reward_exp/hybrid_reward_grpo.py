@@ -3,7 +3,7 @@
 混合奖励 GRPO 训练脚本 - 实验2 & 实验3
 
 训练策略:
-- 总奖励 = α × Judge_Reward + β × ASR_Reward + γ × Format_Reward
+- 总奖励 = α × Judge_Reward + β × ASR_Reward
 - 实验2: 固定 α=0.5, β=0.5, 研究不同judge prompt策略和评分方式
 - 实验3: 固定judge prompt, 研究不同 α:β 比例
 
@@ -81,7 +81,6 @@ DEFAULT_ARGS = {
     # 奖励权重
     "asr_weight": 0.5,
     "judge_weight": 0.5,
-    "format_weight": 0.1,
 
     # 端口
     "target_judge_port": 8001,
@@ -134,7 +133,6 @@ def parse_args():
     # 奖励权重
     parser.add_argument("--asr_weight", type=float, default=DEFAULT_ARGS["asr_weight"])
     parser.add_argument("--judge_weight", type=float, default=DEFAULT_ARGS["judge_weight"])
-    parser.add_argument("--format_weight", type=float, default=DEFAULT_ARGS["format_weight"])
 
     # 端口
     parser.add_argument("--target_judge_port", type=int, default=DEFAULT_ARGS["target_judge_port"])
@@ -252,17 +250,6 @@ def load_train_dataset(path: str) -> Dataset:
 # =============================================================================
 # 奖励函数
 # =============================================================================
-def format_reward(prompts: List[str], completions: List[str], **kwargs) -> List[float]:
-    """Format reward: 检查重写后的内容是否合理 (非空, 字数合适)"""
-    out = []
-    for c in completions:
-        text = (c or "").strip()
-        wc = len(text.split())
-        ok_len = 10 <= wc <= 500
-        out.append(1.0 if ok_len else 0.0)
-    return [x * args.format_weight for x in out]
-
-
 def judge_reward(prompts: List[str], completions: List[str], **kwargs) -> List[float]:
     """
     Judge reward: 根据评分方式给重写后的prompt打分
@@ -407,7 +394,7 @@ def main():
     logger.info(f"实验: {args.experiment}")
     logger.info(f"输出: {args.output_dir}")
     logger.info(f"训练数据: {args.train_data}")
-    logger.info(f"奖励权重: ASR={args.asr_weight}, Judge={args.judge_weight}, Format={args.format_weight}")
+    logger.info(f"奖励权重: ASR={args.asr_weight}, Judge={args.judge_weight}")
     logger.info(f"Judge维度: {args.judge_prompt}")
     logger.info(f"评分方式: {args.scoring_method}")
     logger.info(f"LoRA rank: {args.lora_r}")
@@ -489,7 +476,7 @@ def main():
         args=grpo_cfg,
         train_dataset=train_ds,
         processing_class=tokenizer,
-        reward_funcs=[asr_reward, judge_reward, format_reward],
+        reward_funcs=[asr_reward, judge_reward],
     )
 
     # 训练
