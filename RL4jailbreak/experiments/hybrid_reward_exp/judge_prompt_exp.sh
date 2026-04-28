@@ -284,8 +284,6 @@ for strategy in "${STRATEGIES[@]}"; do
                 --scoring_method "$method" \
                 --train_data "$TRAIN_DATA" \
                 --policy_model "$POLICY_MODEL" \
-                --target_model "$TARGET_MODEL" \
-                --guard_model "$GUARD_MODEL" \
                 --target_judge_port "$TARGET_JUDGE_PORT" \
                 --guard_port "$GUARD_PORT" \
                 --asr_weight "$ASR_WEIGHT" \
