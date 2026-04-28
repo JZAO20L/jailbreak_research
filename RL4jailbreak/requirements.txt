@@ -2,3 +2,4 @@ transformers
 trl
 peft
 vllm
+swanlab
