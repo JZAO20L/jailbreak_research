@@ -21,7 +21,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 VLLM_ARGS="--served-model-name policy \
-  --max-model-len 2048 \
+  --max-model-len 4096 \
   --port 8003 \
   --tensor-parallel-size 1 \
   --gpu-memory-utilization 0.9 \

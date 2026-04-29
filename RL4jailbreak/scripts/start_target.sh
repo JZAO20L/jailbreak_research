@@ -7,7 +7,7 @@ MODEL_PATH="/root/autodl-tmp/models/Qwen/Qwen3-4B"
 
 vllm serve ${MODEL_PATH} \
   --served-model-name target \
-  --max-model-len 2048 \
+  --max-model-len 4096 \
   --port 8001 \
   --tensor-parallel-size 1 \
   --gpu-memory-utilization 0.4 \
