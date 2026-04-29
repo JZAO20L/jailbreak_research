@@ -116,6 +116,13 @@ class VLLMClient:
         # 用于 OpenAI SDK 的 http client（需要 close）
         self._http_client = httpx.Client(timeout=self.timeout)
 
+        # ===== 不启动服务时，自动从服务器获取模型名称 =====
+        if not launch_server:
+            self._auto_discover_model_name()
+        else:
+            # 启动服务时，model_name 即为 served-model-name
+            pass
+
         # ===== 校验/自动调整 GPU ID 数量与 tensor_parallel_size 匹配 =====
         gpu_ids = [x.strip() for x in gpu_id.split(",") if x.strip()]
         num_gpus = len(gpu_ids)
@@ -175,6 +182,64 @@ class VLLMClient:
                         f"--max-lora-rank {max_lora_rank}",
                     ]
                 )
+
+            if extra_args:
+                cmd_lines.extend(extra_args)
+
+            cmd_str = " \\\n    ".join(cmd_lines)
+            shell_cmd = "\n".join(export_lines) + "\n" + cmd_str + "\n"
+
+            if log_file:
+                os.makedirs(os.path.dirname(log_file), exist_ok=True)
+                self._log_fh = open(log_file, "a")
+                print(f"[VLLMClient] Log file: {log_file}")
+
+            print(f"[VLLMClient] Launching vLLM server on port {self.port}...")
+            if self._log_fh:
+                self._log_fh.write(shell_cmd + "\n")
+
+            self.server_process = subprocess.Popen(
+                shell_cmd,
+                shell=True,
+                stdout=self._log_fh or subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+            )
+
+            # 等待服务启动
+            print(f"[VLLMClient] Waiting for vLLM server to be ready on port {self.port}...")
+            import time
+            for i in range(120):
+                try:
+                    resp = self._http_client.get(f"{self.base_url_v1}/health")
+                    if resp.status_code == 200:
+                        print(f"[VLLMClient] vLLM server is ready on port {self.port}!")
+                        break
+                except:
+                    pass
+                time.sleep(2)
+            else:
+                raise RuntimeError(f"vLLM server failed to start on port {self.port} within 240 seconds")
+
+    def _auto_discover_model_name(self):
+        """当不启动服务时，自动从已有 vLLM 服务获取模型名称"""
+        try:
+            resp = self._http_client.get(f"{self.base_url_v1}/models")
+            if resp.status_code == 200:
+                data = resp.json()
+                models = data.get("data", [])
+                if models:
+                    auto_name = models[0].get("id")
+                    if auto_name:
+                        self.model_name = auto_name
+                        print(f"[VLLMClient] Auto-discovered model name: '{auto_name}'")
+                        return
+        except Exception as e:
+            print(f"[VLLMClient] Warning: could not auto-discover model name: {e}")
+        # fallback
+        import os
+        fallback = os.path.basename(self.model_path.rstrip("/"))
+        self.model_name = fallback if fallback and fallback != "." else "default"
+        print(f"[VLLMClient] Using fallback model name: '{self.model_name}'")
 
             if extra_args:
                 cmd_lines.extend(extra_args)
