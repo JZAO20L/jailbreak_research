@@ -46,14 +46,12 @@ JUDGE_WEIGHT=0.5
 # =========================
 # 策略 × 维度定义
 # =========================
-# 基于实验1 Top 5策略
+# 基于实验1 Top 3策略 (缩减以减少实验时间和成本)
 # 每个策略对应: 3个通用维度 + 1个专用维度
 STRATEGIES=(
     "hypothetical_scenario"
     "creative_writing"
     "role_playing"
-    "red_teaming"
-    "urgent_situation"
 )
 
 # 通用维度 (对所有策略适用)
