@@ -193,7 +193,7 @@ ensure_services_running() {
     log "============================================================"
     log "清理GPU上的残留vLLM进程..."
     log "============================================================"
-    pkill -9 -f "vllm" 2>/dev/null || true
+    pkill -f VLLM 2>/dev/null || true
     sleep 5
 
     # 启动Target服务
