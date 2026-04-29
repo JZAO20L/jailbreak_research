@@ -72,7 +72,7 @@ DEFAULT_ARGS = {
     "num_train_epochs": 2,
     "beta": 0.05,
     "num_generations": 8,
-    "per_device_train_batch_size": 32,
+    "per_device_train_batch_size": 16,
     "max_completion_len": 2048,
     "gradient_accumulation_steps": 1,
     "vllm_max_model_len": 4096,
