@@ -170,7 +170,18 @@ start_target_service() {
         done
         log "Target服务启动超时!"; return 1
     else
-        log "错误: 找不到 start_target.sh"; return 1
+        # 直接启动vLLM
+        log "使用vllm serve直接启动Target..."
+        CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
+            --host 127.0.0.1 --port $TARGET_JUDGE_PORT \
+            --max-model-len 4096 --gpu-memory-utilization 0.4 \
+            --served-model-name target \
+            > "$OUTPUT_DIR/target_vllm.log" 2>&1 &
+        for i in $(seq 1 120); do
+            if check_port_active "$TARGET_JUDGE_PORT"; then log "Target服务启动成功!"; return 0; fi
+            sleep 2
+        done
+        log "Target服务启动超时!"; return 1
     fi
 }
 
@@ -185,7 +196,18 @@ start_guard_service() {
         done
         log "Guard服务启动超时!"; return 1
     else
-        log "错误: 找不到 start_guard.sh"; return 1
+        # 直接启动vLLM
+        log "使用vllm serve直接启动Guard..."
+        CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$GUARD_MODEL" \
+            --host 127.0.0.1 --port $GUARD_PORT \
+            --max-model-len 4096 --gpu-memory-utilization 0.4 \
+            --served-model-name guard \
+            > "$OUTPUT_DIR/guard_vllm.log" 2>&1 &
+        for i in $(seq 1 120); do
+            if check_port_active "$GUARD_PORT"; then log "Guard服务启动成功!"; return 0; fi
+            sleep 2
+        done
+        log "Guard服务启动超时!"; return 1
     fi
 }
 

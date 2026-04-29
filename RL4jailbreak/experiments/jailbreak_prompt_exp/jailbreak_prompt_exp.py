@@ -447,7 +447,7 @@ def main():
 
     print(f"  连接Policy (GPU0:{config['policy_port']})...")
     policy_client = VLLMClient(
-        model_name="",
+        model_name="policy",
         model_path=config["policy_model"],
         host="127.0.0.1",
         port=config["policy_port"],
@@ -458,7 +458,7 @@ def main():
 
     print(f"  连接Target (GPU1:{config['target_port']})...")
     target_client = VLLMClient(
-        model_name="",
+        model_name="target",
         model_path=config["target_model"],
         host="127.0.0.1",
         port=config["target_port"],
@@ -469,7 +469,7 @@ def main():
 
     print(f"  连接Guard (GPU1:{config['guard_port']})...")
     guard_client = VLLMClient(
-        model_name="",
+        model_name="guard",
         model_path=config["guard_model"],
         host="127.0.0.1",
         port=config["guard_port"],

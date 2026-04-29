@@ -214,7 +214,7 @@ logger.info(f"Config saved to {config_path}")
 logger.info("Connecting to existing vLLM servers...")
 
 TARGET_JUDGE_CLIENT = VLLMClient(
-    model_name="",
+    model_name="target",
     model_path="unused",
     host="127.0.0.1",
     port=args.target_judge_port,
@@ -224,7 +224,7 @@ TARGET_JUDGE_CLIENT = VLLMClient(
 )
 
 GUARD_CLIENT = VLLMClient(
-    model_name="",
+    model_name="guard",
     model_path="unused",
     host="127.0.0.1",
     port=args.guard_port,
