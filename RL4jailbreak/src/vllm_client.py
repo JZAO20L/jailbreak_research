@@ -241,42 +241,6 @@ class VLLMClient:
         self.model_name = fallback if fallback and fallback != "." else "default"
         print(f"[VLLMClient] Using fallback model name: '{self.model_name}'")
 
-            if extra_args:
-                cmd_lines.extend(extra_args)
-
-            vllm_cmd = " \\\n    ".join(cmd_lines)
-
-            shell_script = textwrap.dedent(
-                f"""
-                set -e
-                {'; '.join(export_lines)}
-
-                {vllm_cmd}
-                """
-            ).strip()
-
-            print(f"[VLLMClient] Launching server with script:\n{shell_script}")
-
-            # ---- 修复：stdout/stderr 必须总是有定义 ----
-            stdout = None
-            stderr = None
-            if log_file:
-                log_dir = os.path.dirname(os.path.abspath(log_file))
-                if log_dir:
-                    os.makedirs(log_dir, exist_ok=True)
-                self._log_fh = open(log_file, "a", encoding="utf-8")
-                stdout = stderr = self._log_fh
-
-            self.server_process = subprocess.Popen(
-                ["bash", "-lc", shell_script],
-                stdout=stdout,
-                stderr=stderr,
-                text=True,
-            )
-
-            _wait_for_http_server(self.base_url_root, timeout_s=self.timeout)
-            print(f"[VLLMClient] Server ready at {self.base_url_root}")
-
         # 初始化 OpenAI 客户端
         self.openai_client = OpenAI(
             api_key="EMPTY",
