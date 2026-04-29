@@ -21,7 +21,7 @@ BASE_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 TRAIN_DATA="${TRAIN_DATA:-$BASE_DIR/../data/dataset/processed/10k/train.jsonl}"
 
 # 评估数据
-EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/eval.jsonl}"
+EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/val.jsonl}"
 
 # 输出目录
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/reward_weight_exp_output}"
