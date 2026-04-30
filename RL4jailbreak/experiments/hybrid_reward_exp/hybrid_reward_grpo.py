@@ -315,7 +315,9 @@ def judge_reward(prompts: List[str], completions: List[str], **kwargs) -> List[f
         return [s * args.judge_weight for s in scores]
 
     elif args.scoring_method == "tournament":
-        # 锦标赛打分模式
+        # 锦标赛打分模式 - 使用不同的judge prompt framing
+        # 现在tournament模板也使用SCORE格式, 与single相同但prompt角度不同
+        
         judge_prompts = []
         for p, c in zip(prompts, completions):
             original_prompt = p
