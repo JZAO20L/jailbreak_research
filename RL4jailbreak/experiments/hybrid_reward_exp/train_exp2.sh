@@ -192,9 +192,19 @@ for strategy in "${STRATEGIES[@]}"; do
 
             EXP_KEY="${strategy}_${dim}_${method}"
 
-            # 检查是否已完成
+            # 检查checkpoint中是否已完成
             if echo " $COMPLETED_LIST " | grep -q " $EXP_KEY "; then
-                log "[跳过] $EXP_KEY (已完成)"
+                log "[跳过] $EXP_KEY (checkpoint标记已完成)"
+                continue
+            fi
+
+            # 检查final_lora目录是否存在 (额外保障)
+            LORA_PATH="$OUTPUT_DIR/${EXP_KEY}/final_lora"
+            if [ -d "$LORA_PATH" ]; then
+                log "[跳过] $EXP_KEY (final_lora已存在)"
+                # 标记为已完成
+                COMPLETED_LIST="$COMPLETED_LIST $EXP_KEY"
+                save_checkpoint "$COMPLETED_LIST"
                 continue
             fi
 
