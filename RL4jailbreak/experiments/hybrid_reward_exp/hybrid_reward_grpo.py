@@ -75,7 +75,7 @@ DEFAULT_ARGS = {
     "per_device_train_batch_size": 8,
     "max_completion_len": 2048,
     "gradient_accumulation_steps": 1,
-    "vllm_max_model_len": 6144,
+    "vllm_max_model_len": 4096,
     "vllm_gpu_memory_utilization": 0.3,
 
     # 奖励权重
@@ -142,9 +142,9 @@ def parse_args():
     # 实验2专用
     parser.add_argument("--judge_prompt", type=str, default=DEFAULT_ARGS["judge_prompt"],
                         help="Judge prompt维度 (实验2), 可以是基础名如idea_preservation, 也可以是完整名如idea_preservation_single")
-    parser.add_argument("--scoring_method", type=str, default=DEFAULT_ARGS["scoring_method"],
-                        choices=["single", "tournament"],
-                        help="评分方式: single=单条打分, tournament=锦标赛")
+    parser.add_argument("--scoring_method", type=str, default="single",
+                        choices=["single"],
+                        help="Scoring method (single only for now)")
 
     # 数据集
     parser.add_argument("--train_data", type=str,

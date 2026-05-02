@@ -42,7 +42,7 @@ JUDGE_WEIGHT=0.5
 # 策略 × 维度定义
 # =========================
 # 只保留hypothetical_scenario策略 (实验1 Top 1: 30.8%)
-# 4个维度 (3通用 + 1专用) × 2种评分方式 = 8个实验
+# 4个维度 (3通用 + 1专用) × single评分 = 4个实验
 STRATEGIES=(
     "hypothetical_scenario"
 )
@@ -55,7 +55,6 @@ GENERAL_DIMENSIONS=(
 
 SCORING_METHODS=(
     "single"
-    "tournament"
 )
 
 # 解析命令行参数

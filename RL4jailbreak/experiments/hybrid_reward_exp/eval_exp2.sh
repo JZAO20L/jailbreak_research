@@ -138,7 +138,7 @@ ensure_services_running() {
     if ! check_port_active "$TARGET_JUDGE_PORT"; then
         CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
             --host 127.0.0.1 --port $TARGET_JUDGE_PORT \
-            --max-model-len 6144 --gpu-memory-utilization 0.4 \
+            --max-model-len 4096 --gpu-memory-utilization 0.4 \
             --served-model-name target \
             > "$OUTPUT_DIR/target_vllm.log" 2>&1 &
         for i in $(seq 1 120); do
@@ -153,7 +153,7 @@ ensure_services_running() {
     if ! check_port_active "$GUARD_PORT"; then
         CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$GUARD_MODEL" \
             --host 127.0.0.1 --port $GUARD_PORT \
-            --max-model-len 6144 --gpu-memory-utilization 0.4 \
+            --max-model-len 4096 --gpu-memory-utilization 0.4 \
             --served-model-name guard \
             > "$OUTPUT_DIR/guard_vllm.log" 2>&1 &
         for i in $(seq 1 120); do
