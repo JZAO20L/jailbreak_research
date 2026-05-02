@@ -75,7 +75,7 @@ DEFAULT_ARGS = {
     "per_device_train_batch_size": 8,
     "max_completion_len": 2048,
     "gradient_accumulation_steps": 1,
-    "vllm_max_model_len": 4096,
+    "vllm_max_model_len": 6144,
     "vllm_gpu_memory_utilization": 0.3,
 
     # 奖励权重
