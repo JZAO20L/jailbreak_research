@@ -315,29 +315,87 @@ def judge_reward(prompts: List[str], completions: List[str], **kwargs) -> List[f
         return [s * args.judge_weight for s in scores]
 
     elif args.scoring_method == "tournament":
-        # 锦标赛打分模式 - 使用不同的judge prompt framing
-        # 现在tournament模板也使用SCORE格式, 与single相同但prompt角度不同
+        # 锦标赛打分模式 - 8强→4强→2强→第1, 分别赋分0.4,0.6,0.8,1.0
+        # GRPO的completions包含k=8个生成, 我们对每个原始prompt的8个生成进行淘汰赛
         
-        judge_prompts = []
-        for p, c in zip(prompts, completions):
-            original_prompt = p
-            rewritten = (c or "").strip()
-            judge_prompts.append(
-                judge_template.format(
-                    original_prompt=original_prompt,
-                    rewritten_prompt=rewritten
-                )
-            )
-
-        resps = TARGET_JUDGE_CLIENT.llm_batch_call(
-            prompts=judge_prompts,
-            temperature=0.0,
-            max_tokens=256,
-            max_workers=32,
-            return_exceptions=True,
-        )
-        scores = [_parse_single_score(r) for r in resps]
-        return [s * args.judge_weight for s in scores]
+        import random
+        from collections import defaultdict
+        
+        # 收集同一原始prompt的8个生成
+        prompt_groups = defaultdict(list)  # original_prompt -> [(idx, completion)]
+        for idx, (p, c) in enumerate(zip(prompts, completions)):
+            prompt_groups[p].append((idx, c))
+        
+        final_scores = [0.1] * len(prompts)  # 默认保底分
+        
+        for orig_prompt, group in prompt_groups.items():
+            n = len(group)
+            if n < 2:
+                for idx, _ in group:
+                    final_scores[idx] = 0.5  # 单个生成给中间分
+                continue
+            
+            # 随机打乱顺序
+            random.seed(42)
+            participants = list(group)
+            random.shuffle(participants)
+            
+            # 记录每个参赛者的淘汰轮次
+            eliminated_round = {}  # idx -> round (1=8强, 2=4强, 3=2强, 4=冠军)
+            
+            round_num = 1
+            while len(participants) > 1:
+                next_round = []
+                for i in range(0, len(participants), 2):
+                    if i + 1 >= len(participants):
+                        # 轮空直接晋级
+                        next_round.append(participants[i])
+                        continue
+                    
+                    idx_a, comp_a = participants[i]
+                    idx_b, comp_b = participants[i + 1]
+                    
+                    # 构建judge prompt (比较两个)
+                    judge_prompt = judge_template.format(
+                        original_prompt=orig_prompt,
+                        rewritten_prompt_a=comp_a or "",
+                        rewritten_prompt_b=comp_b or ""
+                    )
+                    
+                    resp = TARGET_JUDGE_CLIENT.llm_call(
+                        prompt=judge_prompt,
+                        temperature=0.0,
+                        max_tokens=256,
+                    )
+                    
+                    # 判断胜负
+                    if "CHOICE=A" in (resp or ""):
+                        next_round.append(participants[i])
+                        eliminated_round[idx_b] = round_num
+                    elif "CHOICE=B" in (resp or ""):
+                        next_round.append(participants[i + 1])
+                        eliminated_round[idx_a] = round_num
+                    else:
+                        # 无法判断, 都晋级
+                        next_round.extend([participants[i], participants[i + 1]])
+                
+                round_num += 1
+                participants = next_round
+            
+            # 冠军
+            if participants:
+                eliminated_round[participants[0][0]] = round_num
+            
+            # 根据淘汰轮次给分
+            # round 1 (8强出局) = 0.4
+            # round 2 (4强出局) = 0.6
+            # round 3 (2强出局) = 0.8
+            # round 4 (冠军)   = 1.0
+            ROUND_SCORES = {1: 0.4, 2: 0.6, 3: 0.8, 4: 1.0}
+            for idx, rnd in eliminated_round.items():
+                final_scores[idx] = ROUND_SCORES.get(rnd, 0.5)
+        
+        return [s * args.judge_weight for s in final_scores]
 
     else:
         raise ValueError(f"Unknown scoring method: {args.scoring_method}")
