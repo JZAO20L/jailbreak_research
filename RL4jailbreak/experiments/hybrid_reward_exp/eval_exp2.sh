@@ -1,5 +1,5 @@
 #!/bin/bash
-# 实验2 评估脚本 - 只负责评估，带checkpoint机制
+# 实验2 评估脚本 - 带checkpoint机制，每个实验单独启动Policy+LoRA
 #
 # 用法:
 #   bash experiments/hybrid_reward_exp/eval_exp2.sh              # 评估全部
@@ -26,14 +26,15 @@ TARGET_MODEL="${TARGET_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
 GUARD_MODEL="${GUARD_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B}"
 
 # 端口
-TARGET_JUDGE_PORT=8001
+POLICY_PORT=8003
+TARGET_PORT=8001
 GUARD_PORT=8002
 
 # =========================
-# 策略 × 维度定义
+# 策略 x 维度定义
 # =========================
 # 只保留hypothetical_scenario策略
-# 4个维度 (3通用 + 1专用) × single评分 = 4个实验
+# 4个维度 (3通用 + 1专用) x single评分 = 4个实验
 STRATEGIES=(
     "hypothetical_scenario"
 )
@@ -128,20 +129,17 @@ check_port_active() {
     curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$port/health" 2>/dev/null | grep -q "200"
 }
 
-ensure_services_running() {
-    log "清理GPU上的残留vLLM进程..."
-    pkill -f VLLM 2>/dev/null || true
-    sleep 5
-
-    log "启动Target模型服务 (端口: $TARGET_JUDGE_PORT)..."
-    if ! check_port_active "$TARGET_JUDGE_PORT"; then
+# 启动Target和Guard服务（只需启动一次）
+start_target_guard() {
+    log "启动Target模型服务 (端口: $TARGET_PORT)..."
+    if ! check_port_active "$TARGET_PORT"; then
         CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
-            --host 127.0.0.1 --port $TARGET_JUDGE_PORT \
+            --host 127.0.0.1 --port $TARGET_PORT \
             --max-model-len 4096 --gpu-memory-utilization 0.4 \
             --served-model-name target \
             > "$OUTPUT_DIR/target_vllm.log" 2>&1 &
         for i in $(seq 1 120); do
-            if check_port_active "$TARGET_JUDGE_PORT"; then log "Target启动成功!"; break; fi
+            if check_port_active "$TARGET_PORT"; then log "Target启动成功!"; break; fi
             sleep 2
         done
     else
@@ -162,6 +160,41 @@ ensure_services_running() {
     else
         log "Guard服务已在运行"
     fi
+}
+
+# 启动带LoRA的Policy服务
+start_policy_with_lora() {
+    local lora_path=$1
+
+    log "关闭旧的Policy服务..."
+    pkill -f "vllm.*8003" 2>/dev/null || true
+    sleep 3
+
+    log "启动带LoRA的Policy服务 (端口: $POLICY_PORT)..."
+    log "LoRA路径: $lora_path"
+    
+    CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
+        --host 127.0.0.1 --port $POLICY_PORT \
+        --max-model-len 4096 --gpu-memory-utilization 0.9 \
+        --served-model-name policy \
+        --enable-lora \
+        --lora-modules policy_lora="$lora_path" \
+        --max-lora-rank 32 \
+        > "$OUTPUT_DIR/policy_vllm.log" 2>&1 &
+    
+    for i in $(seq 1 120); do
+        if check_port_active "$POLICY_PORT"; then log "Policy+LoRA启动成功!"; return 0; fi
+        sleep 2
+    done
+    log "Policy+LoRA启动超时!"
+    return 1
+}
+
+# 关闭Policy服务
+stop_policy() {
+    log "关闭Policy服务..."
+    pkill -f "vllm.*8003" 2>/dev/null || true
+    sleep 3
 }
 
 # =========================
@@ -198,8 +231,8 @@ log "============================================================"
 
 mkdir -p "$OUTPUT_DIR"
 
-# 启动模型服务
-ensure_services_running
+# 启动Target和Guard（只需一次）
+start_target_guard
 
 # 遍历所有实验组合
 EXP_IDX=0
@@ -237,6 +270,9 @@ for strategy in "${STRATEGIES[@]}"; do
             log "[$EXP_IDX/$TOTAL_EXPS] 评估: $EXP_KEY"
             log "============================================================"
 
+            # 启动带LoRA的Policy
+            start_policy_with_lora "$LORA_PATH"
+
             EVAL_OUTPUT="$EXP_OUTPUT/eval_results"
             mkdir -p "$EVAL_OUTPUT"
 
@@ -246,11 +282,14 @@ for strategy in "${STRATEGIES[@]}"; do
                 --base_model_path "$POLICY_MODEL" \
                 --target_model_path "$TARGET_MODEL" \
                 --guard_model_path "$GUARD_MODEL" \
-                --policy_port "$TARGET_JUDGE_PORT" \
-                --target_port "$TARGET_JUDGE_PORT" \
+                --policy_port "$POLICY_PORT" \
+                --target_port "$TARGET_PORT" \
                 --guard_port "$GUARD_PORT" \
                 --output_root "$EVAL_OUTPUT" \
                 --run_name "eval_${EXP_KEY}"
+
+            # 关闭Policy服务
+            stop_policy
 
             # 更新checkpoint
             COMPLETED_LIST="$COMPLETED_LIST $EXP_KEY"
