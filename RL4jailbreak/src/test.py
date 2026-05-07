@@ -266,7 +266,9 @@ def run_asr_test_serial(
         return empty
 
     logger.info("[Stage 1/2] Target inference...")
-    with VLLMClient(**target_client_config) as target_client:
+    target_cfg = dict(target_client_config)
+    target_cfg["launch_server"] = False
+    with VLLMClient(**target_cfg) as target_client:
         target_generate_batch(
             target_client,
             items,
@@ -284,7 +286,9 @@ def run_asr_test_serial(
         time.sleep(sleep_s_between_stage)
 
     logger.info("[Stage 2/2] Guard classification...")
-    with VLLMClient(**guard_client_config) as guard_client:
+    guard_cfg = dict(guard_client_config)
+    guard_cfg["launch_server"] = False
+    with VLLMClient(**guard_cfg) as guard_client:
         guard_classify_batch(
             guard_client,
             items,
