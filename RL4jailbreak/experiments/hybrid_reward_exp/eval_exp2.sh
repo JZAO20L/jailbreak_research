@@ -170,23 +170,32 @@ start_policy_with_lora() {
     pkill -f "vllm.*8003" 2>/dev/null || true
     sleep 3
 
-    log "启动带LoRA的Policy服务 (端口: $POLICY_PORT)..."
-    log "LoRA路径: $lora_path"
-    
-    CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
-        --host 127.0.0.1 --port $POLICY_PORT \
-        --max-model-len 4096 --gpu-memory-utilization 0.9 \
-        --served-model-name policy \
-        --enable-lora \
-        --lora-modules policy_lora="$lora_path" \
-        --max-lora-rank 32 \
-        > "$OUTPUT_DIR/policy_vllm.log" 2>&1 &
+    if [ -z "$lora_path" ]; then
+        log "启动Policy服务（不带LoRA）(端口: $POLICY_PORT)..."
+        CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
+            --host 127.0.0.1 --port $POLICY_PORT \
+            --max-model-len 4096 --gpu-memory-utilization 0.9 \
+            --served-model-name policy \
+            > "$OUTPUT_DIR/policy_vllm.log" 2>&1 &
+    else
+        log "启动带LoRA的Policy服务 (端口: $POLICY_PORT)..."
+        log "LoRA路径: $lora_path"
+        
+        CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
+            --host 127.0.0.1 --port $POLICY_PORT \
+            --max-model-len 4096 --gpu-memory-utilization 0.9 \
+            --served-model-name policy \
+            --enable-lora \
+            --lora-modules policy_lora="$lora_path" \
+            --max-lora-rank 32 \
+            > "$OUTPUT_DIR/policy_vllm.log" 2>&1 &
+    fi
     
     for i in $(seq 1 120); do
-        if check_port_active "$POLICY_PORT"; then log "Policy+LoRA启动成功!"; return 0; fi
+        if check_port_active "$POLICY_PORT"; then log "Policy启动成功!"; return 0; fi
         sleep 2
     done
-    log "Policy+LoRA启动超时!"
+    log "Policy启动超时!"
     return 1
 }
 
@@ -233,6 +242,71 @@ mkdir -p "$OUTPUT_DIR"
 
 # 启动Target和Guard（只需一次）
 start_target_guard
+
+# =========================
+# Baseline评估
+# =========================
+log ""
+log "============================================================"
+log "Baseline评估"
+log "============================================================"
+
+# Baseline 1: 直接测试原始prompt（不重写）
+BASELINE_ORIGINAL_DIR="$OUTPUT_DIR/baseline_original_prompt"
+if [ ! -f "$BASELINE_ORIGINAL_DIR/result.json" ] || [ "$RESET_CKPT" = true ]; then
+    log "Baseline 1: 测试原始prompt（不重写）..."
+    mkdir -p "$BASELINE_ORIGINAL_DIR"
+    
+    python "$BASE_DIR/scripts/eval.py" \
+        --eval_path "$EVAL_DATA" \
+        --base_model_path "$POLICY_MODEL" \
+        --target_model_path "$TARGET_MODEL" \
+        --guard_model_path "$GUARD_MODEL" \
+        --target_port "$TARGET_PORT" \
+        --guard_port "$GUARD_PORT" \
+        --output_root "$BASELINE_ORIGINAL_DIR" \
+        --run_name "baseline_original_prompt"
+    
+    log "Baseline 1完成: 原始prompt ASR"
+else
+    log "Baseline 1已存在，跳过"
+fi
+
+# Baseline 2: 使用policy model（不带LoRA）重写后的ASR
+BASELINE_BASE_DIR="$OUTPUT_DIR/baseline_base_model"
+if [ ! -f "$BASELINE_BASE_DIR/result.json" ] || [ "$RESET_CKPT" = true ]; then
+    log "Baseline 2: 使用policy model（不带LoRA）重写..."
+    mkdir -p "$BASELINE_BASE_DIR"
+    
+    # 启动不带LoRA的Policy
+    start_policy_with_lora ""
+    
+    python "$BASE_DIR/scripts/eval.py" \
+        --eval_path "$EVAL_DATA" \
+        --base_model_path "$POLICY_MODEL" \
+        --target_model_path "$TARGET_MODEL" \
+        --guard_model_path "$GUARD_MODEL" \
+        --policy_port "$POLICY_PORT" \
+        --target_port "$TARGET_PORT" \
+        --guard_port "$GUARD_PORT" \
+        --output_root "$BASELINE_BASE_DIR" \
+        --run_name "baseline_base_model"
+    
+    # 关闭Policy
+    stop_policy
+    
+    log "Baseline 2完成: 不带LoRA的policy model重写后ASR"
+else
+    log "Baseline 2已存在，跳过"
+fi
+
+# =========================
+# 正式实验评估
+# =========================
+log ""
+log "============================================================"
+log "正式实验评估"
+log "============================================================"
 
 # 遍历所有实验组合
 EXP_IDX=0
