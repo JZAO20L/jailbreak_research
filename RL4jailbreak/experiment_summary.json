@@ -1,0 +1,13 @@
+{
+  "baseline": 0.0,
+  "all_results": {
+    "baseline_original": 0.0
+  },
+  "filtered_results": {
+    "baseline_original": 0.0
+  },
+  "filter_criteria": {
+    "topk": null,
+    "gap_threshold": null
+  }
+}

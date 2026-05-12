@@ -14,8 +14,8 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 BASE_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 
-# 评估数据
-EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/val.jsonl}"
+# 评估数据 - 使用test集进行最终ASR测试（与实验1保持一致）
+EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/test.jsonl}"
 
 # 输出目录
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/judge_prompt_exp_output}"
@@ -33,10 +33,12 @@ GUARD_PORT=8002
 # =========================
 # 策略 x 维度定义
 # =========================
-# 只保留hypothetical_scenario策略
-# 4个维度 (3通用 + 1专用) x single评分 = 4个实验
+# 三个策略: hypothetical_scenario, creative_writing, role_playing
+# 每个策略4个维度 (3通用 + 1专用) x single评分 = 12个实验
 STRATEGIES=(
     "hypothetical_scenario"
+    "creative_writing"
+    "role_playing"
 )
 
 GENERAL_DIMENSIONS=(
@@ -244,61 +246,12 @@ mkdir -p "$OUTPUT_DIR"
 start_target_guard
 
 # =========================
-# Baseline评估
+# Baseline评估 - 已在实验1中测试，跳过
 # =========================
+# Baseline 1: 直接测试原始prompt（不重写） - 实验1已测
+# Baseline 2: 使用policy model（不带LoRA）重写后的ASR - 实验1已测
 log ""
-log "============================================================"
-log "Baseline评估"
-log "============================================================"
-
-# Baseline 1: 直接测试原始prompt（不重写）
-BASELINE_ORIGINAL_DIR="$OUTPUT_DIR/baseline_original_prompt"
-if [ ! -f "$BASELINE_ORIGINAL_DIR/result.json" ] || [ "$RESET_CKPT" = true ]; then
-    log "Baseline 1: 测试原始prompt（不重写）..."
-    mkdir -p "$BASELINE_ORIGINAL_DIR"
-    
-    python "$BASE_DIR/scripts/eval.py" \
-        --eval_path "$EVAL_DATA" \
-        --base_model_path "$POLICY_MODEL" \
-        --target_model_path "$TARGET_MODEL" \
-        --guard_model_path "$GUARD_MODEL" \
-        --target_port "$TARGET_PORT" \
-        --guard_port "$GUARD_PORT" \
-        --output_root "$BASELINE_ORIGINAL_DIR" \
-        --run_name "baseline_original_prompt"
-    
-    log "Baseline 1完成: 原始prompt ASR"
-else
-    log "Baseline 1已存在，跳过"
-fi
-
-# Baseline 2: 使用policy model（不带LoRA）重写后的ASR
-BASELINE_BASE_DIR="$OUTPUT_DIR/baseline_base_model"
-if [ ! -f "$BASELINE_BASE_DIR/result.json" ] || [ "$RESET_CKPT" = true ]; then
-    log "Baseline 2: 使用policy model（不带LoRA）重写..."
-    mkdir -p "$BASELINE_BASE_DIR"
-    
-    # 启动不带LoRA的Policy
-    start_policy_with_lora ""
-    
-    python "$BASE_DIR/scripts/eval.py" \
-        --eval_path "$EVAL_DATA" \
-        --base_model_path "$POLICY_MODEL" \
-        --target_model_path "$TARGET_MODEL" \
-        --guard_model_path "$GUARD_MODEL" \
-        --policy_port "$POLICY_PORT" \
-        --target_port "$TARGET_PORT" \
-        --guard_port "$GUARD_PORT" \
-        --output_root "$BASELINE_BASE_DIR" \
-        --run_name "baseline_base_model"
-    
-    # 关闭Policy
-    stop_policy
-    
-    log "Baseline 2完成: 不带LoRA的policy model重写后ASR"
-else
-    log "Baseline 2已存在，跳过"
-fi
+log "Baseline评估已跳过（实验1已测试）"
 
 # =========================
 # 正式实验评估
@@ -379,4 +332,7 @@ log "============================================================"
 log "评估完成!"
 log "============================================================"
 log "结果保存在: $OUTPUT_DIR"
+log ""
+log "生成汇总报告..."
+python "$SCRIPT_DIR/summarize_results.py" --output_dir "$OUTPUT_DIR"
 log "============================================================"

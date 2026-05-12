@@ -44,6 +44,10 @@ ENV/
 # Output directory - ignore all
 output/
 
+# Experiment output directories
+experiments/hybrid_reward_exp/judge_prompt_exp_output/
+experiments/hybrid_reward_exp/reward_weight_exp_output/
+
 # Sessions
 sessions/
 

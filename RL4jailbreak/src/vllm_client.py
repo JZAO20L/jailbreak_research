@@ -363,10 +363,10 @@ class VLLMClient:
 
         with ThreadPoolExecutor(max_workers=max_workers) as ex:
             future_map = {ex.submit(_one_call, i): i for i in range(n)}
-            for fut in as_completed(future_map):
+            for fut in as_completed(future_map, timeout=self.timeout + 60):
                 i = future_map[fut]
                 try:
-                    results[i] = fut.result()
+                    results[i] = fut.result(timeout=self.timeout + 60)
                 except Exception as e:
                     if return_exceptions:
                         results[i] = f"[Exception] {type(e).__name__}: {e}"

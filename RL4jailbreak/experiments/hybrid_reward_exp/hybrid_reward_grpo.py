@@ -143,8 +143,8 @@ def parse_args():
     parser.add_argument("--judge_prompt", type=str, default=DEFAULT_ARGS["judge_prompt"],
                         help="Judge prompt维度 (实验2), 可以是基础名如idea_preservation, 也可以是完整名如idea_preservation_single")
     parser.add_argument("--scoring_method", type=str, default="single",
-                        choices=["single"],
-                        help="Scoring method (single only for now)")
+                        choices=["single", "tournament"],
+                        help="Scoring method: single or tournament")
 
     # 数据集
     parser.add_argument("--train_data", type=str,
@@ -308,7 +308,7 @@ def judge_reward(prompts: List[str], completions: List[str], **kwargs) -> List[f
             prompts=judge_prompts,
             temperature=0.0,
             max_tokens=256,
-            max_workers=32,
+            max_workers=16,
             return_exceptions=True,
         )
         scores = [_parse_single_score(r) for r in resps]
@@ -345,40 +345,59 @@ def judge_reward(prompts: List[str], completions: List[str], **kwargs) -> List[f
             
             round_num = 1
             while len(participants) > 1:
-                next_round = []
+                # 收集本轮所有需要比较的对 (并行优化)
+                comparisons = []
+                bye_participants = []
+
                 for i in range(0, len(participants), 2):
                     if i + 1 >= len(participants):
-                        # 轮空直接晋级
-                        next_round.append(participants[i])
+                        bye_participants.append(participants[i])
                         continue
-                    
                     idx_a, comp_a = participants[i]
                     idx_b, comp_b = participants[i + 1]
-                    
-                    # 构建judge prompt (比较两个)
-                    judge_prompt = judge_template.format(
-                        original_prompt=orig_prompt,
-                        rewritten_prompt_a=comp_a or "",
-                        rewritten_prompt_b=comp_b or ""
+                    comparisons.append((idx_a, idx_b, comp_a, comp_b))
+
+                if len(comparisons) == 0:
+                    break
+
+                # 批量构建judge prompts
+                judge_prompts_batch = []
+                for idx_a, idx_b, comp_a, comp_b in comparisons:
+                    judge_prompts_batch.append(
+                        judge_template.format(
+                            original_prompt=orig_prompt,
+                            rewritten_prompt_a=comp_a or "",
+                            rewritten_prompt_b=comp_b or ""
+                        )
                     )
-                    
-                    resp = TARGET_JUDGE_CLIENT.llm_call(
-                        prompt=judge_prompt,
-                        temperature=0.0,
-                        max_tokens=256,
-                    )
-                    
-                    # 判断胜负
+
+                # 批量调用judge模型 (并行)
+                resps = TARGET_JUDGE_CLIENT.llm_batch_call(
+                    prompts=judge_prompts_batch,
+                    temperature=0.0,
+                    max_tokens=256,
+                    max_workers=8,
+                    return_exceptions=True,
+                )
+
+                # 处理结果
+                next_round = []
+                next_round.extend(bye_participants)
+
+                for comp_idx, (idx_a, idx_b, comp_a, comp_b) in enumerate(comparisons):
+                    resp = resps[comp_idx]
+                    pair_a = (idx_a, comp_a)
+                    pair_b = (idx_b, comp_b)
+
                     if "CHOICE=A" in (resp or ""):
-                        next_round.append(participants[i])
+                        next_round.append(pair_a)
                         eliminated_round[idx_b] = round_num
                     elif "CHOICE=B" in (resp or ""):
-                        next_round.append(participants[i + 1])
+                        next_round.append(pair_b)
                         eliminated_round[idx_a] = round_num
                     else:
-                        # 无法判断, 都晋级
-                        next_round.extend([participants[i], participants[i + 1]])
-                
+                        next_round.extend([pair_a, pair_b])
+
                 round_num += 1
                 participants = next_round
             
@@ -413,7 +432,7 @@ def asr_reward(prompts: List[str], completions: List[str], **kwargs) -> List[flo
         prompts=jailbreak_prompts,
         temperature=0.7,
         max_tokens=args.target_max_tokens,
-        max_workers=32,
+        max_workers=16,
         return_exceptions=True,
     )
 
@@ -432,7 +451,7 @@ def asr_reward(prompts: List[str], completions: List[str], **kwargs) -> List[flo
         messages_list=guard_messages_list,
         temperature=0.0,
         max_tokens=256,
-        max_workers=32,
+        max_workers=16,
         return_exceptions=True,
     )
 
