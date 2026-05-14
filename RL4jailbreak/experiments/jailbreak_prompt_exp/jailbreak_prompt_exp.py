@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
-Jailbreak Prompt 实验脚本 - 实验1
+Jailbreak Prompt 实验脚本 - 实验1 (重做版本)
 
-对所有jailbreak_prompts中的prompt策略在test集上进行ASR测试。
+根据 TODO.md "实验重做" 部分：
+- 模型路径: /mnt/bn/chenxiong/mlx/users/jiazixiao/models
+- GPU配置: eval时3卡 (0:policy, 1:target, 2:guard)
+- 上下文长度: policy 4k, target&guard 8k
 
 特点:
 - 不启动/关闭模型，连接由sh脚本启动的已有服务
-- 三个模型只连接一次，所有策略共享
+- Checkpoint支持：跳过已完成的策略
 - Top-K / Gap Threshold 筛选
 
 使用方法:
@@ -42,7 +46,7 @@ from experiments.jailbreak_prompt_exp.jailbreak_prompts import (
 )
 
 # =========================
-# 配置 (默认值)
+# 配置 (默认值 - 根据 TODO.md "实验重做")
 # =========================
 DEFAULT_CONFIG = {
     # 测试集路径
@@ -51,21 +55,25 @@ DEFAULT_CONFIG = {
     # 输出目录
     "output_root": os.path.join(BASE_DIR, "experiments/jailbreak_prompt_exp/output"),
 
-    # 模型路径
-    "policy_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
-    "target_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
-    "guard_model": "/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B",
+    # 模型路径 (根据TODO.md)
+    "policy_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",
+    "target_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",
+    "guard_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B",
 
     # 端口 (连接已有服务，不启动新服务)
     "policy_port": 8003,
     "target_port": 8001,
     "guard_port": 8002,
 
+    # 上下文长度 (根据TODO.md)
+    "policy_max_model_len": 4096,
+    "target_max_model_len": 8192,
+    "guard_max_model_len": 8192,
+
     # 生成配置
     "k": 1,
     "rewrite_temperature": 0.7,
     "rewrite_max_tokens": 2048,
-    "max_model_len": 4096,
 
     # ASR测试配置
     "test_batch_size": 64,
@@ -221,6 +229,8 @@ def run_asr_test(
     guard_client: VLLMClient,
     originals: List[str],
     rewritten_buckets: List[List[str]],
+    target_max_model_len: int = 8192,
+    guard_max_model_len: int = 8192,
     test_batch_size: int = 64,
     test_max_workers: int = 16,
     target_max_tokens: int = 512,
@@ -260,20 +270,20 @@ def run_asr_test(
             "model_path": "",
             "host": "127.0.0.1",
             "port": target_client.port,
-            "gpu_id": "0",
+            "gpu_id": "1",
             "timeout": 900,
-            "gpu_memory_utilization": 0.9,
-            "max_model_len": 4096,
+            "gpu_memory_utilization": 0.4,
+            "max_model_len": target_max_model_len,
         }
         guard_cfg = {
             "model_name": "guard",
             "model_path": "",
             "host": "127.0.0.1",
             "port": guard_client.port,
-            "gpu_id": "0",
+            "gpu_id": "2",
             "timeout": 900,
-            "gpu_memory_utilization": 0.9,
-            "max_model_len": 4096,
+            "gpu_memory_utilization": 0.4,
+            "max_model_len": guard_max_model_len,
         }
 
         metrics = run_asr_test_serial(
@@ -289,7 +299,7 @@ def run_asr_test(
             guard_temperature=guard_temperature,
             show_progress=True,
             sleep_s_between_stage=0.0,
-            save_raw_results=save_raw_results,  # 控制是否保存原始结果
+            save_raw_results=save_raw_results,
         )
 
         # 如果需要保存原始生成内容
@@ -357,7 +367,7 @@ def print_results_table(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Jailbreak Prompt 实验脚本 - 实验1")
+    parser = argparse.ArgumentParser(description="Jailbreak Prompt 实验脚本 - 实验1 (重做版本)")
 
     parser.add_argument("--strategies", nargs="*", default=None,
                         help="要评估的策略列表 (默认: 所有策略)")
@@ -377,6 +387,14 @@ def main():
                         help="Target模型端口 (默认8001)")
     parser.add_argument("--guard_port", type=int, default=None,
                         help="Guard模型端口 (默认8002)")
+    parser.add_argument("--policy_max_model_len", type=int, default=None,
+                        help="Policy模型上下文长度 (默认4096)")
+    parser.add_argument("--target_max_model_len", type=int, default=None,
+                        help="Target模型上下文长度 (默认8192)")
+    parser.add_argument("--guard_max_model_len", type=int, default=None,
+                        help="Guard模型上下文长度 (默认8192)")
+    parser.add_argument("--reset", action="store_true",
+                        help="重置checkpoint，从头开始")
     parser.add_argument("--dry_run", action="store_true",
                         help="只打印配置，不实际执行")
 
@@ -396,6 +414,12 @@ def main():
         config["target_port"] = args.target_port
     if args.guard_port is not None:
         config["guard_port"] = args.guard_port
+    if args.policy_max_model_len is not None:
+        config["policy_max_model_len"] = args.policy_max_model_len
+    if args.target_max_model_len is not None:
+        config["target_max_model_len"] = args.target_max_model_len
+    if args.guard_max_model_len is not None:
+        config["guard_max_model_len"] = args.guard_max_model_len
 
     # 确定要评估的策略
     if args.strategies:
@@ -410,19 +434,20 @@ def main():
 
     # 打印实验配置
     print("="*80)
-    print("Jailbreak Prompt 实验 - 实验1")
+    print("Jailbreak Prompt 实验 - 实验1 (重做版本)")
     print("="*80)
     print(f"测试集: {config['test_set']}")
     print(f"策略数量: {len(strategies)}")
     print(f"总评估次数: {len(strategies) + 1} (含原始基线)")
     print(f"输出目录: {config['output_root']}")
-    print(f"Policy端口: {config['policy_port']}")
-    print(f"Target端口: {config['target_port']}")
-    print(f"Guard端口: {config['guard_port']}")
+    print(f"GPU配置: Policy(GPU0:{config['policy_port']}), Target(GPU1:{config['target_port']}), Guard(GPU2:{config['guard_port']})")
+    print(f"上下文长度: Policy={config['policy_max_model_len']}, Target={config['target_max_model_len']}, Guard={config['guard_max_model_len']}")
     if args.topk:
         print(f"Top-K筛选: 只保留前 {args.topk} 个策略")
     if args.gap_threshold:
         print(f"Gap筛选: 差距阈值 = {args.gap_threshold}")
+    if args.reset:
+        print("重置checkpoint: 从头开始")
     print("="*80)
 
     if args.dry_run:
@@ -467,7 +492,7 @@ def main():
     )
     print("  Target连接成功!")
 
-    print(f"  连接Guard (GPU1:{config['guard_port']})...")
+    print(f"  连接Guard (GPU2:{config['guard_port']})...")
     guard_client = VLLMClient(
         model_name="guard",
         model_path=config["guard_model"],
@@ -485,11 +510,18 @@ def main():
 
     # 加载检查点
     ckpt = load_checkpoint(config["output_root"])
+    
+    # 重置checkpoint
+    if args.reset:
+        print("  重置checkpoint，从头开始")
+        ckpt = {"completed": [], "results": [], "baseline_asr": None}
+        save_checkpoint(config["output_root"], ckpt)
+    
     completed_strategies = set(ckpt.get("completed", []))
     results = list(ckpt.get("results", []))
     baseline_asr = ckpt.get("baseline_asr")
 
-    if completed_strategies:
+    if completed_strategies and not args.reset:
         print(f"  检测到检查点: 已完成 {len(completed_strategies)} 个策略")
         print(f"  将跳过已完成的策略，继续未完成的部分")
 
@@ -503,7 +535,7 @@ def main():
     baseline_output_dir = os.path.join(config["output_root"], "baseline_original")
     os.makedirs(baseline_output_dir, exist_ok=True)
 
-    if baseline_asr is None:
+    if baseline_asr is None or args.reset:
         baseline_rewritten = [[o] for o in test_originals]
         baseline_raw_path = os.path.join(baseline_output_dir, "raw_results.json")
 
@@ -512,6 +544,8 @@ def main():
             guard_client=guard_client,
             originals=test_originals,
             rewritten_buckets=baseline_rewritten,
+            target_max_model_len=config["target_max_model_len"],
+            guard_max_model_len=config["guard_max_model_len"],
             test_batch_size=config.get("test_batch_size", 64),
             test_max_workers=config.get("test_max_workers", 16),
             target_max_tokens=config.get("target_max_tokens", 512),
@@ -572,6 +606,8 @@ def main():
             guard_client=guard_client,
             originals=test_originals,
             rewritten_buckets=rewritten,
+            target_max_model_len=config["target_max_model_len"],
+            guard_max_model_len=config["guard_max_model_len"],
             test_batch_size=config.get("test_batch_size", 64),
             test_max_workers=config.get("test_max_workers", 16),
             target_max_tokens=config.get("target_max_tokens", 512),
@@ -661,6 +697,14 @@ def main():
         "filter_criteria": {
             "topk": args.topk,
             "gap_threshold": args.gap_threshold,
+        },
+        "config": {
+            "policy_model": config["policy_model"],
+            "target_model": config["target_model"],
+            "guard_model": config["guard_model"],
+            "policy_max_model_len": config["policy_max_model_len"],
+            "target_max_model_len": config["target_max_model_len"],
+            "guard_max_model_len": config["guard_max_model_len"],
         },
         "elapsed_time": {
             "hours": hours,

@@ -25,16 +25,16 @@ EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/val.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/judge_prompt_exp_output}"
 
 # 模型路径
-POLICY_MODEL="${POLICY_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B}"
+POLICY_MODEL="${POLICY_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B}"
+TARGET_MODEL="${TARGET_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B}"
+GUARD_MODEL="${GUARD_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B}"
 
 # 端口
 TARGET_JUDGE_PORT=8001
 GUARD_PORT=8002
 
 # 训练超参数
-MAX_STEPS="${MAX_STEPS:-500}"
+MAX_STEPS="${MAX_STEPS:-1000}"
 LEARNING_RATE="${LEARNING_RATE:-1e-5}"
 NUM_GENERATIONS="${NUM_GENERATIONS:-8}"
 BETA="${BETA:-0.05}"
@@ -170,7 +170,7 @@ start_target_service() {
     else
         # 直接启动vLLM
         log "使用vllm serve直接启动Target..."
-        CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
+        CUDA_VISIBLE_DEVICES=2 nohup vllm serve "$TARGET_MODEL" \
             --host 127.0.0.1 --port $TARGET_JUDGE_PORT \
             --max-model-len 4096 --gpu-memory-utilization 0.4 \
             --served-model-name target \
@@ -196,7 +196,7 @@ start_guard_service() {
     else
         # 直接启动vLLM
         log "使用vllm serve直接启动Guard..."
-        CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$GUARD_MODEL" \
+        CUDA_VISIBLE_DEVICES=3 nohup vllm serve "$GUARD_MODEL" \
             --host 127.0.0.1 --port $GUARD_PORT \
             --max-model-len 4096 --gpu-memory-utilization 0.4 \
             --served-model-name guard \

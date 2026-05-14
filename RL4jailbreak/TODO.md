@@ -27,7 +27,7 @@ RL4jailbreak\scripts\下的 start_guard.sh,start_policy.sh,start_target.sh;
 - 实现RL4jailbreak\experiments\jailbreak_prompt_exp\jailbreak_prompt_exp.py,对所有jailbreak_prompts中的prompt策略在test集上进行ASR测试,使用我们写好的eval脚本
 - 实现RL4jailbreak\experiments\jailbreak_prompt_exp\exp.sh,完成实验1
 - 需要测试原始prompt的ASR;
-- 最后选出表现优秀的prompt策略,可以指定topk,也可以设置一个gap_threshold,当gap大于这个值时舍弃后续prompt; 预计选择k_1=3-5个重写策略
+- 最后选出表现优秀的prompt策略,可以指定topk,也可以设置一个gap_threshold,当gap大于这个值时舍弃后续prompt; 预计选择k_1=3个重写策略
 - 输出路径为RL4jailbreak\experiments\jailbreak_prompt_exp\output
 
 ## judge prompt exp(实验2)
@@ -56,10 +56,76 @@ RL4jailbreak\scripts\下的 start_guard.sh,start_policy.sh,start_target.sh;
 - 实验2的输出放在RL4jailbreak\experiments\hybrid_reward_exp\judge_prompt_exp_output
 - 完成该目录的README.md的实验2部分
 
+<del>
 ## reward weight exp(实验3)
-- 通过实验2确定最佳的1~3个攻击prompt+judge维度+评分方式组合,然后进行ASR 和Judge Reward的权重混合实验; 测试的混合比例为2:8,4:6,5:5(这部分在实验2就做了),6:4,8:2,实际上每个是做4个实验; 每个实验也都训练1000步
+- 通过实验2确定最佳的3个攻击prompt+judge维度+评分方式组合,然后进行ASR 和Judge Reward的权重混合实验; 测试的混合比例为2:8,4:6,5:5(这部分在实验2就做了),6:4,8:2,实际上每个是做4个实验; 每个实验也都训练1000步
 - 实现实验脚本:RL4jailbreak\experiments\hybrid_reward_exp\reward_weight_exp.sh
 - 和实验2类似,需要在脚本中进行模型部署+训练+eval集上ASR评测
+</del>
+
+---
+# 实验重做
+
+## 基础配置
+数据集不变,jailbreak_research/data
+qwen3-4b和guard模型在/mnt/bn/chenxiong/mlx/users/jiazixiao/models
+
+增加上下文长度，policy使用4k，target&judge、guard使用8k；
+RL实验统一训练1000步；
+eval时使用3卡，0：policy,1：target,2：guard
+train时使用4卡，0&1：policy并发训练，2:target，3:guard
+
+## jailbreak prompt实验(实验1)
+jailbreak_research/RL4jailbreak/experiments/jailbreak_prompt_exp
+- 使用jailbreak_research/RL4jailbreak/experiments/jailbreak_prompt_exp/jailbreak_prompts.py中的24个prompt进行重写实验
+- 选取top3好的prompt策略
+- 然后再用qwen3-max进行重写实验,说明旗舰LLM在jailbreak任务上并无优势并分析其护栏问题或者能力失配问题
+使用百炼codingplan调用qwen3-max模型，url为https://coding.dashscope.aliyuncs.com/v1，api_key为sk-sp-eb50d67ca64a451b820cc4ab87ef8e6c，模型名 qwen3-max-2026-01-23
+参考代码：
+```python
+import os
+from openai import OpenAI
+
+client = OpenAI(
+    # 若没有配置环境变量，请用百炼API Key将下行替换为：api_key="sk-xxx"
+    api_key="sk-sp-eb50d67ca64a451b820cc4ab87ef8e6c",
+    base_url="https://coding.dashscope.aliyuncs.com/v1",
+)
+
+response = client.responses.create(
+    model="qwen3-max-2026-01-23",
+    input="你能做些什么？"
+)
+
+# 获取模型回复
+print(response.output_text)
+```
+
+
+
+## judge prompt exp(实验2)
+- 使用一个固定prompt模板，包含多judge维度，单一judge prompt进行多维度评估
+- 维度设计：有用性&正交性，保证对jailbreak prompt rewrite任务的指向性，同时各维度尽可能正交不相关
+    - idea保留程度
+    - 攻击隐蔽程度
+    - 攻击策略执行效果
+    - 总体jailbreak潜力
+- judge reward计算：解析judge model输出，使用json格式，每个维度对应一个0~1之间的两位浮点数，最后对所有维度的reward进行加权平均得到最终reward
+- 使用judge prompt和ASR reward 1:1混合reward进行训练，每个实验训练1000步，进行3攻击prompt*（4单一维度（一个加权为1其他为0）+1均匀维度（所有加权为0.25，作为后续的消融实验内容））共15个训练实验
+- 训练脚本和eval脚本分离（参考当前实现）
+- 使用trl+accelerate实现并发grpo训练，参考docs/trl/docs/trl/grpo_trainer.md
+
+## adaptive reward exp(实验3,new idea)
+参考
+- 参考jailbreak_research/RL4jailbreak/NEW_IDEA.md中的adaptive reward idea，通过计算ASR reward方差和judge reward方差+sigmoid函数偏置+ema滑动平均，来动态调整ASR reward的权重（同时也调整judge reward的权重）
+- 在实验2的混合reward代码基础上进行修改，增加动态调整权重逻辑；可调参数包括ASR reward上下限（0～1）和计算方差的窗口大小；第一个窗口内没有reward,所以权重固定为1:1,后续窗口根据reward方差动态调整权重
+    - ASR reward上下限实验 暂定默认0.8&0.2
+    - 只使用一个jailbreak prompt+固定judge prompt+固定各维度权重，进行实验
+    - 对ema滑动平均的beta参数进行调参，计划为0，0.5，0.67，0.8，0.9，0.95，对应窗口大小为1，2，3，5，10，20
+- 也都统一训练1000步
+- 实验3的judge reward prompt使用混合prompt，对表现前3的攻击prompt
+
+---
 
 # 注意事项
 1. 我们使用的target model和judge model都是qwen3-4B,进行了复用; 

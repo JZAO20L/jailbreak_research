@@ -25,16 +25,16 @@ TRAIN_DATA="${TRAIN_DATA:-$BASE_DIR/../data/dataset/processed/10k/train.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/judge_prompt_exp_output}"
 
 # 模型路径
-POLICY_MODEL="${POLICY_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B}"
+POLICY_MODEL="${POLICY_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B}"
+TARGET_MODEL="${TARGET_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B}"
+GUARD_MODEL="${GUARD_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B}"
 
 # 端口
 TARGET_JUDGE_PORT=8001
 GUARD_PORT=8002
 
 # vLLM context length (tournament需要更长)
-VLLM_MAX_MODEL_LEN_SINGLE=4096
+VLLM_MAX_MODEL_LEN_SINGLE=8192
 VLLM_MAX_MODEL_LEN_TOURNAMENT=8192
 
 # vLLM GPU memory utilization (提高以支持更多并发请求)
@@ -43,7 +43,7 @@ VLLM_GPU_UTIL_TARGET_TOURNAMENT=0.55
 VLLM_GPU_UTIL_GUARD=0.40
 
 # 训练超参数
-MAX_STEPS="${MAX_STEPS:-500}"
+MAX_STEPS="${MAX_STEPS:-1000}"
 LEARNING_RATE="${LEARNING_RATE:-1e-5}"
 NUM_GENERATIONS="${NUM_GENERATIONS:-8}"
 BETA="${BETA:-0.05}"
@@ -187,7 +187,7 @@ start_target_service() {
     done
     log "使用 max-model-len=$max_len, gpu-memory-utilization=$gpu_util (评分方式: ${SCORING_METHODS[*]})"
 
-    CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
+    CUDA_VISIBLE_DEVICES=2 nohup vllm serve "$TARGET_MODEL" \
         --host 127.0.0.1 --port $TARGET_JUDGE_PORT \
         --max-model-len $max_len --gpu-memory-utilization $gpu_util \
         --served-model-name target \
@@ -214,9 +214,9 @@ start_guard_service() {
 
     log "使用 gpu-memory-utilization=$VLLM_GPU_UTIL_GUARD"
 
-    CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$GUARD_MODEL" \
+    CUDA_VISIBLE_DEVICES=3 nohup vllm serve "$GUARD_MODEL" \
         --host 127.0.0.1 --port $GUARD_PORT \
-        --max-model-len 4096 --gpu-memory-utilization $VLLM_GPU_UTIL_GUARD \
+        --max-model-len 8192 --gpu-memory-utilization $VLLM_GPU_UTIL_GUARD \
         --served-model-name guard \
         > "$OUTPUT_DIR/guard_vllm.log" 2>&1 &
 
@@ -434,7 +434,7 @@ for strategy in "${STRATEGIES[@]}"; do
             mkdir -p "$EXP_OUTPUT"
 
             # GRPO训练
-            CUDA_VISIBLE_DEVICES=0 python "$BASE_DIR/experiments/hybrid_reward_exp/hybrid_reward_grpo.py" \
+            CUDA_VISIBLE_DEVICES=0,1 python "$BASE_DIR/experiments/hybrid_reward_exp/hybrid_reward_grpo.py" \
                 --experiment exp2 \
                 --judge_prompt "$dim" \
                 --scoring_method "$method" \

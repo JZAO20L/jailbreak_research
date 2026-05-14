@@ -59,9 +59,9 @@ from experiments.hybrid_reward_exp.judge_prompts import (
 # =============================================================================
 DEFAULT_ARGS = {
     # 模型配置
-    "policy_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
-    "target_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",  # Judge复用target
-    "guard_model": "/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B",
+    "policy_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",
+    "target_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",  # Judge复用target
+    "guard_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B",
     "lora_r": 16,
     "lora_alpha": 16,
     "lora_dropout": 0.05,
@@ -180,7 +180,7 @@ def parse_args():
 args = parse_args()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
 os.environ["SWANLAB_PROJECT"] = "JPG_hybrid_reward_exp"
 
 LORA_DIR = os.path.join(args.output_dir, "final_lora")

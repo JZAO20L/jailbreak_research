@@ -21,9 +21,9 @@ EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/test.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/judge_prompt_exp_output}"
 
 # 模型路径
-POLICY_MODEL="${POLICY_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B}"
+POLICY_MODEL="${POLICY_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B}"
+TARGET_MODEL="${TARGET_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B}"
+GUARD_MODEL="${GUARD_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B}"
 
 # 端口
 POLICY_PORT=8003
@@ -137,7 +137,7 @@ start_target_guard() {
     if ! check_port_active "$TARGET_PORT"; then
         CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
             --host 127.0.0.1 --port $TARGET_PORT \
-            --max-model-len 4096 --gpu-memory-utilization 0.4 \
+            --max-model-len 8192 --gpu-memory-utilization 0.4 \
             --served-model-name target \
             > "$OUTPUT_DIR/target_vllm.log" 2>&1 &
         for i in $(seq 1 120); do
@@ -150,9 +150,9 @@ start_target_guard() {
 
     log "启动Guard模型服务 (端口: $GUARD_PORT)..."
     if ! check_port_active "$GUARD_PORT"; then
-        CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$GUARD_MODEL" \
+        CUDA_VISIBLE_DEVICES=2 nohup vllm serve "$GUARD_MODEL" \
             --host 127.0.0.1 --port $GUARD_PORT \
-            --max-model-len 4096 --gpu-memory-utilization 0.4 \
+            --max-model-len 8192 --gpu-memory-utilization 0.4 \
             --served-model-name guard \
             > "$OUTPUT_DIR/guard_vllm.log" 2>&1 &
         for i in $(seq 1 120); do

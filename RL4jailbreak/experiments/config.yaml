@@ -1,0 +1,47 @@
+# jailbreak_research/RL4jailbreak/experiments/config.yaml
+experiment:
+  name: "adaptive_hybrid_reward_ablation"
+  seed: 42
+  total_steps: 1000
+  
+data:
+  path: "jailbreak_research/data/processed/10k"
+  attack_prompt: "hypothetical_scenario"  # 实验1筛选的top1
+  judge_prompt: "multi_dimension_uniform"  # 4维×0.25均匀加权
+  
+model:
+  policy: "Qwen3-4B"
+  target: "Qwen3-4B"      # 攻击目标模型
+  judge: "Qwen3-Max"      # Judge评估模型
+  context:
+    policy: 4096
+    target_judge_guard: 8192
+
+training:
+  method: "GRPO"
+  group_size: 8
+  batch_size: 4
+  lr: 1e-5
+  gradient_accumulation: 4
+  # 奖励基础配置
+  reward:
+    judge_dimensions: ["intent_preservation", "stealth", "strategy_execution", "attack_potential"]
+    judge_weights: [0.25, 0.25, 0.25, 0.25]  # 均匀加权
+    asr_judge_ratio: "adaptive"  # 关键：启用自适应
+    
+  # 自适应机制固定超参
+  adaptive:
+    alpha: 2.0          # 方差比敏感度
+    delta: -1.0         # Sigmoid偏置
+    lambda_smooth: 0.95 # λ自身惯性
+    # 以下两项为实验变量，见下方矩阵
+    # window_size: ${WINDOW}
+    # clip_range: ${CLIP_RANGE}
+    
+hardware:
+  train:
+    num_gpus: 4
+    assignment: {0,1: policy, 2: target, 3: guard}
+  eval:
+    num_gpus: 3
+    assignment: {0: policy, 1: target, 2: guard}
