@@ -57,9 +57,9 @@ DEFAULT_CONFIG = {
     "prompts": [REWRITE_PROMPT],
 
     # 模型路径
-    "base_model_path": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
-    "target_model_path": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
-    "guard_model_path": "/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B",
+    "base_model_path": "/home/tiger/models/Qwen3-4B",
+    "target_model_path": "/home/tiger/models/Qwen3-4B",
+    "guard_model_path": "/home/tiger/models/Qwen3Guard-Gen-4B",
 
     # 端口
     "policy_port": 8003,
@@ -69,7 +69,7 @@ DEFAULT_CONFIG = {
 
     # vLLM 配置
     "gpu_memory_utilization": 0.9,
-    "max_model_len": 4096,
+    "max_model_len": 8192,
     "timeout": 900,
 
     # 生成配置
@@ -163,7 +163,7 @@ def run_single_eval(
     guard_max_tokens: int = 256,
     guard_temperature: float = 0.0,
     gpu_memory_utilization: float = 0.9,
-    max_model_len: int = 4096,
+    max_model_len: int = 8192,
     timeout: int = 900,
     sleep_between_stage: float = 5.0,
 ) -> Dict[str, Any]:

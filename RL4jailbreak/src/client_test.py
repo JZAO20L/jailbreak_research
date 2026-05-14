@@ -3,7 +3,7 @@ import os
 import logging
 import httpx
 
-BASE_DIR = "/home/jiazixiao.jzx/jailbreak/RL4jailbreak"
+BASE_DIR = "/home/tiger/jailbreak_research/RL4jailbreak"
 sys.path.insert(0, BASE_DIR)
 
 from src.vllm_client import VLLMClient

@@ -38,9 +38,9 @@ EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/val.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
 
 # Model paths
-POLICY_MODEL="${POLICY_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B}"
+POLICY_MODEL="${POLICY_MODEL:-/home/tiger/models/Qwen3-4B}"
+TARGET_MODEL="${TARGET_MODEL:-/home/tiger/models/Qwen3-4B}"
+GUARD_MODEL="${GUARD_MODEL:-/home/tiger/models/Qwen3Guard-Gen-4B}"
 
 # Ports
 TARGET_PORT=8001

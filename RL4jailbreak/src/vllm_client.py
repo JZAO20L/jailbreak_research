@@ -434,7 +434,7 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=8, help="batch 并发线程数")
     args = parser.parse_args()
 
-    MODEL_PATH = "/dev/shm/models/Qwen/Qwen3-30B-A3B-Instruct-2507-FP8"
+    MODEL_PATH = "/home/tiger/models/Qwen3-4B"
     MODEL_NAME = "Qwen3-30B-A3B-Instruct-2507"
 
     print("=" * 70)

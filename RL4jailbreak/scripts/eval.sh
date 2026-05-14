@@ -14,9 +14,9 @@ set -e
 EVAL_PATH="${EVAL_PATH:-../data/dataset/processed/10k/val.jsonl}"
 
 # 模型路径
-BASE_MODEL="${BASE_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B}"
+BASE_MODEL="${BASE_MODEL:-/home/tiger/models/Qwen3-4B}"
+TARGET_MODEL="${TARGET_MODEL:-/home/tiger/models/Qwen3-4B}"
+GUARD_MODEL="${GUARD_MODEL:-/home/tiger/models/Qwen3Guard-Gen-4B}"
 
 # LoRA 路径列表 (留空=base model)
 # 示例: LORA_PATHS=("/path/to/lora1" "/path/to/lora2")
@@ -31,7 +31,7 @@ GUARD_PORT=8002
 K=1
 REWRITE_TEMP=0.7
 REWRITE_MAX_TOKENS=2048
-MAX_MODEL_LEN=4096
+MAX_MODEL_LEN=8192
 
 # 输出
 OUTPUT_ROOT="output/eval"

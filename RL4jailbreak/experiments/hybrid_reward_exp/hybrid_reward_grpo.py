@@ -59,9 +59,9 @@ from experiments.hybrid_reward_exp.judge_prompts import (
 # =============================================================================
 DEFAULT_ARGS = {
     # 模型配置
-    "policy_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",
-    "target_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",  # Judge复用target
-    "guard_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B",
+    "policy_model": "/home/tiger/models/Qwen3-4B",
+    "target_model": "/home/tiger/models/Qwen3-4B",  # Judge复用target
+    "guard_model": "/home/tiger/models/Qwen3Guard-Gen-4B",
     "lora_r": 16,
     "lora_alpha": 16,
     "lora_dropout": 0.05,

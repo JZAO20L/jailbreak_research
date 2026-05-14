@@ -4,7 +4,7 @@
 Jailbreak Prompt 实验脚本 - 实验1 (重做版本)
 
 根据 TODO.md "实验重做" 部分：
-- 模型路径: /mnt/bn/chenxiong/mlx/users/jiazixiao/models
+- 模型路径: models
 - GPU配置: eval时3卡 (0:policy, 1:target, 2:guard)
 - 上下文长度: policy 4k, target&guard 8k
 
@@ -56,9 +56,9 @@ DEFAULT_CONFIG = {
     "output_root": os.path.join(BASE_DIR, "experiments/jailbreak_prompt_exp/output"),
 
     # 模型路径 (根据TODO.md)
-    "policy_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",
-    "target_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",
-    "guard_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B",
+    "policy_model": "/home/tiger/models/Qwen3-4B",
+    "target_model": "/home/tiger/models/Qwen3-4B",
+    "guard_model": "/home/tiger/models/Qwen3Guard-Gen-4B",
 
     # 端口 (连接已有服务，不启动新服务)
     "policy_port": 8003,
@@ -70,14 +70,14 @@ DEFAULT_CONFIG = {
     "target_max_model_len": 8192,
     "guard_max_model_len": 8192,
 
-    # 生成配置
+    # 生成配置 (提高并发)
     "k": 1,
     "rewrite_temperature": 0.7,
     "rewrite_max_tokens": 2048,
 
-    # ASR测试配置
-    "test_batch_size": 64,
-    "test_max_workers": 16,
+    # ASR测试配置 (高并发)
+    "test_batch_size": 128,
+    "test_max_workers": 32,
     "target_max_tokens": 512,
     "target_temperature": 0.0,
     "guard_max_tokens": 256,

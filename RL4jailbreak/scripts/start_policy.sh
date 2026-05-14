@@ -4,7 +4,7 @@
 export CUDA_VISIBLE_DEVICES=0
 export VLLM_USE_MODELSCOPE=true
 
-MODEL_PATH="/root/autodl-tmp/models/Qwen/Qwen3-4B"
+MODEL_PATH="/home/tiger/models/Qwen3-4B"
 LORA_PATH=""
 
 # Parse arguments

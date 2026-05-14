@@ -66,9 +66,9 @@ from experiments.adaptive_hybrid_reward_exp.judge_prompts import (
 # =============================================================================
 DEFAULT_ARGS = {
     # Model paths
-    "policy_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",
-    "target_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",
-    "guard_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B",
+    "policy_model": "/home/tiger/models/Qwen3-4B",
+    "target_model": "/home/tiger/models/Qwen3-4B",
+    "guard_model": "/home/tiger/models/Qwen3Guard-Gen-4B",
     
     # LoRA config
     "lora_r": 16,

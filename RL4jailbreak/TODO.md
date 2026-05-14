@@ -68,7 +68,7 @@ RL4jailbreak\scripts\下的 start_guard.sh,start_policy.sh,start_target.sh;
 
 ## 基础配置
 数据集不变,jailbreak_research/data
-qwen3-4b和guard模型在/mnt/bn/chenxiong/mlx/users/jiazixiao/models
+qwen3-4b和guard模型在models
 
 增加上下文长度，policy使用4k，target&judge、guard使用8k；
 RL实验统一训练1000步；
@@ -78,6 +78,7 @@ train时使用4卡，0&1：policy并发训练，2:target，3:guard
 ## jailbreak prompt实验(实验1)
 jailbreak_research/RL4jailbreak/experiments/jailbreak_prompt_exp
 - 使用jailbreak_research/RL4jailbreak/experiments/jailbreak_prompt_exp/jailbreak_prompts.py中的24个prompt进行重写实验
+- 实验配置上，由于policy和target模型都是qwen3-4B，这里我们可以直接在0&1上部署Qwen3-4B，而在2&3上部署guard模型，增加并发数提升实验效率
 - 选取top3好的prompt策略
 - 然后再用qwen3-max进行重写实验,说明旗舰LLM在jailbreak任务上并无优势并分析其护栏问题或者能力失配问题
 使用百炼codingplan调用qwen3-max模型，url为https://coding.dashscope.aliyuncs.com/v1，api_key为sk-sp-eb50d67ca64a451b820cc4ab87ef8e6c，模型名 qwen3-max-2026-01-23

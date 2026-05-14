@@ -1,10 +1,9 @@
-#!/bin/bash
 # =============================================================================
 # Jailbreak Prompt 实验脚本 - 实验1 (重做版本)
 #
 # 根据 TODO.md "实验重做" 部分：
-# - 模型路径: /mnt/bn/chenxiong/mlx/users/jiazixiao/models
-# - GPU配置: eval时3卡 (0:policy, 1:target, 2:guard)
+# - 模型路径: models
+# - GPU配置: eval时4卡 (0:policy, 1:target, 2&3:guard双实例并发)
 # - 上下文长度: policy 4k, target&guard 8k
 # - 新增: qwen3-max对比实验
 #
@@ -28,14 +27,15 @@ TEST_SET="${TEST_SET:-$BASE_DIR/../data/dataset/processed/10k/test.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
 
 # 模型路径 (根据TODO.md "实验重做")
-POLICY_MODEL="${POLICY_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B}"
+POLICY_MODEL="${POLICY_MODEL:-/home/tiger/models/Qwen3-4B}"
+TARGET_MODEL="${TARGET_MODEL:-/home/tiger/models/Qwen3-4B}"
+GUARD_MODEL="${GUARD_MODEL:-/home/tiger/models/Qwen3Guard-Gen-4B}"
 
-# 端口
+# 端口配置 (双guard)
 POLICY_PORT=8003
 TARGET_PORT=8001
-GUARD_PORT=8002
+GUARD_PORT_1=8002  # GPU2上的guard
+GUARD_PORT_2=8004  # GPU3上的guard
 
 # 上下文长度 (根据TODO.md)
 POLICY_MAX_MODEL_LEN=4096
@@ -44,8 +44,8 @@ GUARD_MAX_MODEL_LEN=8192
 
 # GPU显存利用率
 POLICY_GPU_UTIL=0.9
-TARGET_GPU_UTIL=0.4
-GUARD_GPU_UTIL=0.4
+TARGET_GPU_UTIL=0.9
+GUARD_GPU_UTIL=0.9
 
 # qwen3-max API配置 (根据TODO.md)
 QWEN3_MAX_API_KEY="sk-sp-eb50d67ca64a451b820cc4ab87ef8e6c"
@@ -202,18 +202,20 @@ with open('$CKPT_FILE', 'w') as f:
 # =========================
 start_all_services() {
     log "============================================================"
-    log "启动模型服务 (3卡配置)"
+    log "启动模型服务 (并发启动 Policy+Target)"
     log "============================================================"
     log "GPU0: Policy ($POLICY_MAX_MODEL_LEN context)"
     log "GPU1: Target ($TARGET_MAX_MODEL_LEN context)"
     log "GPU2: Guard ($GUARD_MAX_MODEL_LEN context)"
     log "============================================================"
-    
+
     # 设置环境变量
     export VLLM_USE_MODELSCOPE=false
-    
+
+    # 并发启动 Policy(GPU0) 和 Target(GPU1) - 都是Qwen3-4B
+    log "并发启动 Policy (GPU0) 和 Target (GPU1)..."
+
     # Policy (GPU0)
-    log "启动 Policy (GPU0, 端口 $POLICY_PORT)..."
     if ! check_port_active $POLICY_PORT; then
         CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
             --host 127.0.0.1 --port $POLICY_PORT \
@@ -221,13 +223,12 @@ start_all_services() {
             --gpu-memory-utilization $POLICY_GPU_UTIL \
             --served-model-name policy \
             > "$OUTPUT_DIR/policy_vllm.log" 2>&1 &
-        wait_for_port $POLICY_PORT "Policy"
+        log "  Policy 进程已启动 (等待就绪)"
     else
-        log "Policy 已在运行"
+        log "  Policy 已在运行"
     fi
-    
-    # Target (GPU1)
-    log "启动 Target (GPU1, 端口 $TARGET_PORT)..."
+
+    # Target (GPU1) - 同时启动
     if ! check_port_active $TARGET_PORT; then
         CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
             --host 127.0.0.1 --port $TARGET_PORT \
@@ -235,11 +236,45 @@ start_all_services() {
             --gpu-memory-utilization $TARGET_GPU_UTIL \
             --served-model-name target \
             > "$OUTPUT_DIR/target_vllm.log" 2>&1 &
-        wait_for_port $TARGET_PORT "Target"
+        log "  Target 进程已启动 (等待就绪)"
     else
-        log "Target 已在运行"
+        log "  Target 已在运行"
     fi
-    
+
+    # 等待 Policy 和 Target 就绪 (并发等待)
+    log "等待 Policy 和 Target 服务就绪..."
+    local policy_ready=false
+    local target_ready=false
+    local timeout=180
+    local elapsed=0
+
+    while [ $elapsed -lt $timeout ]; do
+        if ! $policy_ready && check_port_active $POLICY_PORT; then
+            log "  Policy 服务就绪! (端口 $POLICY_PORT)"
+            policy_ready=true
+        fi
+        if ! $target_ready && check_port_active $TARGET_PORT; then
+            log "  Target 服务就绪! (端口 $TARGET_PORT)"
+            target_ready=true
+        fi
+
+        if $policy_ready && $target_ready; then
+            break
+        fi
+
+        sleep 2
+        elapsed=$((elapsed + 2))
+    done
+
+    if ! $policy_ready; then
+        log "ERROR: Policy 服务启动超时!"
+        return 1
+    fi
+    if ! $target_ready; then
+        log "ERROR: Target 服务启动超时!"
+        return 1
+    fi
+
     # Guard (GPU2)
     log "启动 Guard (GPU2, 端口 $GUARD_PORT)..."
     if ! check_port_active $GUARD_PORT; then
@@ -253,7 +288,7 @@ start_all_services() {
     else
         log "Guard 已在运行"
     fi
-    
+
     log "所有模型服务已就绪!"
 }
 

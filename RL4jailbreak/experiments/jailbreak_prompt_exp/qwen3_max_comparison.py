@@ -107,7 +107,7 @@ class Qwen3MaxClient:
         prompts: List[str],
         temperature: float = 0.7,
         max_tokens: int = 2048,
-        max_workers: int = 8,
+        max_workers: int = 8,  # qwen3-max API并发数
         show_progress: bool = True,
     ) -> List[str]:
         """批量重写"""
@@ -206,7 +206,7 @@ def run_asr_test(
             guard_client_config=guard_cfg,
             output_path=None,
             batch_size=64,
-            max_workers=16,
+            max_workers=8,  # qwen3-max测试时降低并发数
             target_max_tokens=512,
             target_temperature=0.0,
             guard_max_tokens=256,
@@ -325,7 +325,7 @@ def main():
     print("\n连接 Target + Guard...")
     target_client = VLLMClient(
         model_name="target",
-        model_path="/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",
+        model_path="/home/tiger/models/Qwen3-4B",
         host="127.0.0.1",
         port=args.target_port,
         launch_server=False,
@@ -333,7 +333,7 @@ def main():
     )
     guard_client = VLLMClient(
         model_name="guard",
-        model_path="/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B",
+        model_path="/home/tiger/models/Qwen3Guard-Gen-4B",
         host="127.0.0.1",
         port=args.guard_port,
         launch_server=False,
@@ -379,7 +379,7 @@ def main():
             prompts=rewrite_prompts,
             temperature=0.7,
             max_tokens=2048,
-            max_workers=4,  # API并发限制
+            max_workers=8,  # qwen3-max API并发数
             show_progress=True,
         )
         

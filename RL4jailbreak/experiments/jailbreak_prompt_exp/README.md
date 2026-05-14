@@ -13,9 +13,9 @@
 | 配置项 | 值 |
 |--------|---|
 | 数据集 | jailbreak_research/data |
-| Policy模型 | `/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B` |
-| Target模型 | `/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B` |
-| Guard模型 | `/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B` |
+| Policy模型 | `models/Qwen3-4B` |
+| Target模型 | `models/Qwen3-4B` |
+| Guard模型 | `models/Qwen3Guard-Gen-4B` |
 | Policy上下文长度 | 4096 |
 | Target/Guard上下文长度 | 8192 |
 
@@ -72,7 +72,7 @@ jailbreak_prompt_exp/
 ### 运行完整实验 (推荐)
 
 ```bash
-cd /mnt/bn/chenxiong/mlx/users/jiazixiao/jailbreak_research/RL4jailbreak
+cd jailbreak_research/RL4jailbreak
 
 # 运行全部24种策略 + 基线测试 + qwen3-max对比
 bash experiments/jailbreak_prompt_exp/exp.sh --qwen3_max --topk 3
@@ -192,7 +192,7 @@ output/qwen3_max_comparison/
     "role_playing": 0.250
   },
   "config": {
-    "policy_model": "/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B",
+    "policy_model": "models/Qwen3-4B",
     "policy_max_model_len": 4096,
     "target_max_model_len": 8192,
     ...

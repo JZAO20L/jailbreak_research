@@ -4,7 +4,7 @@
 
 基础配置：
 - 数据集: jailbreak_research/data
-- qwen3-4b和guard模型: /mnt/bn/chenxiong/mlx/users/jiazixiao/models
+- qwen3-4b和guard模型: models
 
 上下文长度：
 - policy: 4k (4096)
@@ -20,7 +20,7 @@ GPU配置：
 # =============================================================================
 # 模型路径
 # =============================================================================
-MODEL_BASE = "/mnt/bn/chenxiong/mlx/users/jiazixiao/models"
+MODEL_BASE = "/home/tiger/models"
 
 POLICY_MODEL = f"{MODEL_BASE}/Qwen3-4B"
 TARGET_MODEL = f"{MODEL_BASE}/Qwen3-4B"

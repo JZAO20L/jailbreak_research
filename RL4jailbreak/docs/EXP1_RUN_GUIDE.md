@@ -39,8 +39,21 @@ mlx worker quota --resourcetype arnold --usergroup commercial_ai_aigc
 
 ```bash
 # 模型位置
-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3-4B          # Policy & Target
-/mnt/bn/chenxiong/mlx/users/jiazixiao/models/Qwen3Guard-Gen-4B # Guard
+~/models/Qwen3-4B          # Policy & Target
+~/models/Qwen3Guard-Gen-4B # Guard
+```
+
+**下载模型命令（ModelScope）：**
+
+```bash
+# 创建模型目录
+mkdir -p ~/models
+
+# 下载 Qwen3-4B
+modelscope download --model 'Qwen/Qwen3-4B' --local_dir '~/models/Qwen3-4B'
+
+# 下载 Qwen3-Guard-Gen-4B
+modelscope download --model 'Qwen/Qwen3-Guard-Gen-4B' --local_dir '~/models/Qwen3Guard-Gen-4B'
 ```
 
 ---
@@ -105,7 +118,7 @@ mlx worker login WORKER_ID
 **Step 1: 进入项目目录**
 
 ```bash
-cd /mnt/bn/chenxiong/mlx/users/jiazixiao/jailbreak_research/RL4jailbreak
+cd jailbreak_research/RL4jailbreak
 ```
 
 **Step 2: 运行实验1**
