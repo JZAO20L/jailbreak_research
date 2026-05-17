@@ -66,9 +66,9 @@ from experiments.adaptive_hybrid_reward_exp.judge_prompts import (
 # =============================================================================
 DEFAULT_ARGS = {
     # Model paths
-    "policy_model": "/home/tiger/models/Qwen3-4B",
-    "target_model": "/home/tiger/models/Qwen3-4B",
-    "guard_model": "/home/tiger/models/Qwen3Guard-Gen-4B",
+    "policy_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
+    "target_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
+    "guard_model": "/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B",
     
     # LoRA config
     "lora_r": 16,
@@ -185,7 +185,7 @@ def parse_args():
 args = parse_args()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["SWANLAB_PROJECT"] = "JPG_adaptive_hybrid_reward_exp"
 
 LORA_DIR = os.path.join(args.output_dir, "final_lora")

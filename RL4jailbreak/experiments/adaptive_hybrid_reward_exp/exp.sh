@@ -38,9 +38,9 @@ EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/val.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
 
 # Model paths
-POLICY_MODEL="${POLICY_MODEL:-/home/tiger/models/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/home/tiger/models/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/home/tiger/models/Qwen3Guard-Gen-4B}"
+POLICY_MODEL="${POLICY_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
+TARGET_MODEL="${TARGET_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
+GUARD_MODEL="${GUARD_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B}"
 
 # Ports
 TARGET_PORT=8001
@@ -178,14 +178,14 @@ start_target_service() {
         log "Target already running"
         return 0
     fi
-    
-    CUDA_VISIBLE_DEVICES=2 nohup vllm serve "$TARGET_MODEL" \
+
+    CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
         --host 127.0.0.1 --port $TARGET_PORT \
         --max-model-len $VLLM_MAX_MODEL_LEN_TARGET \
         --gpu-memory-utilization $VLLM_GPU_UTIL_TARGET \
         --served-model-name target \
         > "$OUTPUT_DIR/target_vllm.log" 2>&1 &
-    
+
     wait_for_port "$TARGET_PORT"
 }
 
@@ -195,14 +195,14 @@ start_guard_service() {
         log "Guard already running"
         return 0
     fi
-    
-    CUDA_VISIBLE_DEVICES=3 nohup vllm serve "$GUARD_MODEL" \
+
+    CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$GUARD_MODEL" \
         --host 127.0.0.1 --port $GUARD_PORT \
         --max-model-len $VLLM_MAX_MODEL_LEN_GUARD \
         --gpu-memory-utilization $VLLM_GPU_UTIL_GUARD \
         --served-model-name guard \
         > "$OUTPUT_DIR/guard_vllm.log" 2>&1 &
-    
+
     wait_for_port "$GUARD_PORT"
 }
 
@@ -283,7 +283,7 @@ run_training() {
     log "Window size: ~$window_size"
     
     # Run training
-    CUDA_VISIBLE_DEVICES=0,1 python "$SCRIPT_DIR/adaptive_hybrid_reward_grpo.py" \
+    CUDA_VISIBLE_DEVICES=0 python "$SCRIPT_DIR/adaptive_hybrid_reward_grpo.py" \
         --ema_beta "$ema_beta" \
         --alpha "$ALPHA" \
         --delta "$DELTA" \
