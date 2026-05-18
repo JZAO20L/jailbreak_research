@@ -91,7 +91,7 @@ DEFAULT_ARGS = {
     # Adaptive reward config (from TODO.md)
     "ema_beta": 0.95,            # Default: window~20
     "alpha": 2.0,                # Variance ratio sensitivity
-    "delta": -1.0,               # Sigmoid bias
+    "delta": -2.0,               # Sigmoid bias (ratio=1 → lambda=0.5, neutral)
     "lambda_min": 0.2,           # ASR weight lower bound
     "lambda_max": 0.8,           # ASR weight upper bound
     

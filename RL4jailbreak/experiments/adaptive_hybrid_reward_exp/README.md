@@ -106,7 +106,7 @@ We test 6 different EMA beta values, corresponding to different window sizes:
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | `alpha` | 2.0 | Variance ratio sensitivity |
-| `delta` | -1.0 | Sigmoid bias (negative → prefer Judge when ratio=1) |
+| `delta` | -2.0 | Sigmoid bias (ratio=1 → lambda=0.5, neutral 1:1) |
 | `lambda_min` | 0.2 | ASR weight lower bound |
 | `lambda_max` | 0.8 | ASR weight upper bound |
 | `max_steps` | 500 | Training steps (fixed for ablation, aligned with Exp2) |
@@ -274,7 +274,7 @@ from src.reward.adaptive_weight import AdaptiveRewardCalculator, AdaptiveRewardC
 # Initialize
 config = AdaptiveRewardConfig(
     alpha=2.0,          # Variance ratio sensitivity
-    delta=-1.0,         # Sigmoid bias
+    delta=-2.0,         # Sigmoid bias
     lambda_min=0.2,     # Lower bound
     lambda_max=0.8,     # Upper bound
     ema_beta=0.95,      # EMA smoothing (window ~20 steps)

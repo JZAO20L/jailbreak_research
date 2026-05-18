@@ -49,7 +49,7 @@ class AdaptiveRewardConfig:
 
     # Sigmoid parameters
     alpha: float = 2.0          # Variance ratio sensitivity
-    delta: float = -1.0         # Sigmoid bias (negative → prefer Judge when ratio=1)
+    delta: float = -2.0         # Sigmoid bias (ratio=1 → lambda=0.5, neutral)
 
     # Lambda bounds
     lambda_min: float = 0.2     # Lower bound for ASR weight

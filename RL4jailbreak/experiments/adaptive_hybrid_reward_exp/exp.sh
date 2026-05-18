@@ -63,7 +63,7 @@ BETA="${BETA:-0.05}"
 
 # Adaptive reward config (fixed for all experiments except ema_beta)
 ALPHA=2.0
-DELTA=-1.0
+DELTA=-2.0
 LAMBDA_MIN=0.2
 LAMBDA_MAX=0.8
 
