@@ -77,7 +77,7 @@ DEFAULT_ARGS = {
     
     # Training hyperparameters (from TODO.md)
     "learning_rate": 1e-5,
-    "max_steps": 1000,           # Fixed 1000 steps for all experiments
+    "max_steps": 500,            # Fixed 500 steps for ablation (aligned with Exp2)
     "beta": 0.05,                # KL penalty
     "num_generations": 8,        # Group size for GRPO
     "per_device_train_batch_size": 4,

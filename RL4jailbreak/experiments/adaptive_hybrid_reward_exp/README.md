@@ -92,7 +92,7 @@ We test 6 different EMA beta values, corresponding to different window sizes:
 | `delta` | -1.0 | Sigmoid bias (negative → initial preference for ASR) |
 | `lambda_min` | 0.2 | ASR weight lower bound |
 | `lambda_max` | 0.8 | ASR weight upper bound |
-| `max_steps` | 1000 | Training steps (fixed for all experiments) |
+| `max_steps` | 500 | Training steps (fixed for ablation, aligned with Exp2) |
 | `attack_prompt` | hypothetical_scenario | Top-1 strategy from Experiment 1 |
 
 ### Judge Dimensions
@@ -135,9 +135,6 @@ bash experiments/adaptive_hybrid_reward_exp/exp.sh --attack_prompt creative_writ
 
 # Different judge dimension (aligned with Experiment 2)
 bash experiments/adaptive_hybrid_reward_exp/exp.sh --judge_prompt idea_preservation
-
-# Override max steps
-bash experiments/adaptive_hybrid_reward_exp/exp.sh --max_steps 500
 ```
 
 ### Reset and Start Fresh
@@ -157,7 +154,7 @@ bash experiments/adaptive_hybrid_reward_exp/exp.sh --reset
 python experiments/adaptive_hybrid_reward_exp/adaptive_hybrid_reward_grpo.py \
     --ema_beta 0.95 \
     --attack_prompt hypothetical_scenario \
-    --max_steps 1000 \
+    --max_steps 500 \
     --output_dir experiments/adaptive_hybrid_reward_exp/output/test
 ```
 
@@ -316,7 +313,7 @@ Available dimensions:
 | **EMA beta** | Not applicable | 6 values for ablation |
 | **Attack prompt** | 3 strategies × 4 dimensions | 1 strategy + 1 dimension at a time |
 | **Key research question** | Which judge dimension works best? | How does window size affect adaptation? |
-| **Training steps** | 500 (screening phase) | 1000 (full training) |
+| **Training steps** | 500 (screening phase) | 500 (aligned with Exp2) |
 
 ---
 
