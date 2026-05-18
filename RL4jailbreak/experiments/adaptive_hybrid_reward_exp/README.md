@@ -4,11 +4,13 @@
 
 This experiment implements the core innovation of our research: **adaptive weight mechanism** for hybrid reward GRPO training.
 
+**Building on Experiment 2**: This experiment extends the hybrid reward GRPO from Experiment 2 (`experiments/hybrid_reward_exp/`) by replacing fixed ASR/Judge weight ratios with dynamic, variance-based adaptive weighting.
+
 ### Key Idea
 
 When training jailbreak prompt generation models using GRPO, we combine two reward sources:
 - **ASR Reward**: Outcome-based, measures attack success rate (sparse, high variance)
-- **Judge Reward**: Process-based, evaluates prompt quality on multiple dimensions (dense, low variance)
+- **Judge Reward**: Process-based, evaluates prompt quality on specified dimension (dense, low variance)
 
 The challenge is that ASR reward variance varies during training - sometimes high (good discrimination), sometimes low (poor discrimination). Fixed weight mixing doesn't adapt to this dynamic.
 
@@ -25,6 +27,18 @@ final_reward = lambda × ASR_reward + (1 - lambda) × Judge_reward
 - `var_asr` small → ASR provides little discrimination → reduce lambda → rely more on judge
 - `var_asr` large → ASR provides good discrimination → increase lambda → rely more on ASR
 - EMA smoothing prevents drastic fluctuations
+
+---
+
+### Alignment with Experiment 2
+
+| Aspect | Experiment 2 | Experiment 3 |
+|--------|--------------|--------------|
+| **Reward weight** | Fixed (configurable ratio) | **Adaptive** (variance-based) |
+| **Judge format** | `SCORE=0.XX` output | **Same** `SCORE=0.XX` output |
+| **Judge dimensions** | idea_preservation, stealthiness, naturalness, + specialized | **Same** dimensions |
+| **Attack prompts** | hypothetical_scenario, creative_writing, role_playing | **Same** strategies |
+| **Key research question** | Which judge dimension works best? | **How does adaptive window size affect training?** |
 
 ---
 
@@ -83,11 +97,19 @@ We test 6 different EMA beta values, corresponding to different window sizes:
 
 ### Judge Dimensions
 
-Multi-dimensional evaluation (uniform weights [0.25, 0.25, 0.25, 0.25]):
-- `intent_preservation`: Core attack intent preservation
-- `stealth`: Attack concealment / stealthiness
-- `strategy_execution`: How well attack strategy is executed
-- `attack_potential`: Overall jailbreak potential
+Aligned with Experiment 2, using single-dimension scoring (`SCORE=0.XX` format):
+
+**General dimensions** (applicable to all strategies):
+- `idea_preservation`: Core attack intent preservation
+- `stealthiness`: Attack concealment / stealthiness
+- `naturalness`: How natural the rewritten prompt sounds
+
+**Specialized dimensions** (strategy-specific):
+- `hypothetical_scenario`: Quality of hypothetical framing
+- `creative_writing`: Quality of creative writing framing
+- `role_playing`: Quality of role-playing framing
+
+Default: `stealthiness` (best average ASR ~26.1% across strategies in Experiment 2)
 
 ---
 
@@ -110,6 +132,9 @@ bash experiments/adaptive_hybrid_reward_exp/exp.sh --ema_beta 0.95
 
 # Different attack prompt
 bash experiments/adaptive_hybrid_reward_exp/exp.sh --attack_prompt creative_writing
+
+# Different judge dimension (aligned with Experiment 2)
+bash experiments/adaptive_hybrid_reward_exp/exp.sh --judge_prompt idea_preservation
 
 # Override max steps
 bash experiments/adaptive_hybrid_reward_exp/exp.sh --max_steps 500
@@ -225,26 +250,32 @@ final_rewards = calculator.compute_batch_fixed(asr_raws, judge_raws, update_afte
 stats = calculator.get_statistics()
 ```
 
-### Multi-Dimensional Judge
+### Judge Reward (Aligned with Experiment 2)
 
-Judge model evaluates all 4 dimensions in single call:
+Judge model evaluates on a single dimension with `SCORE=0.XX` output:
 
 ```python
 from experiments.adaptive_hybrid_reward_exp.judge_prompts import (
-    JUDGE_MULTI_DIMENSION_UNIFORM,
+    get_judge_prompt,
     parse_judge_response,
 )
 
+# Get template for specified dimension
+judge_template = get_judge_prompt(args.judge_prompt)  # e.g., "stealthiness"
+
 # Format prompt
-judge_prompt = JUDGE_MULTI_DIMENSION_UNIFORM.format(
+judge_prompt = judge_template.format(
     original_prompt=orig,
     rewritten_prompt=rewritten
 )
 
-# Parse JSON response
-weighted_score, parsed_scores = parse_judge_response(response)
-# weighted_score = 0.25*intent + 0.25*stealth + 0.25*strategy + 0.25*potential
+# Parse SCORE=0.XX response
+score = parse_judge_response(response)  # Returns float 0.0-1.0
 ```
+
+Available dimensions:
+- General: `idea_preservation`, `stealthiness`, `naturalness`
+- Specialized: `hypothetical_scenario`, `creative_writing`, `role_playing`
 
 ---
 
@@ -252,11 +283,12 @@ weighted_score, parsed_scores = parse_judge_response(response)
 
 | Aspect | Experiment 2 | Experiment 3 |
 |--------|--------------|--------------|
-| **Reward weight** | Fixed 1:1 | Adaptive (variance-based) |
-| **Judge prompt** | Single dimension | Multi-dimensional (4D uniform) |
+| **Reward weight** | Fixed ratio (e.g., 1:1, 3:7) | **Adaptive** (variance-based) |
+| **Judge prompt** | Single dimension (SCORE=0.XX) | **Same** format (aligned) |
 | **EMA beta** | Not applicable | 6 values for ablation |
-| **Attack prompt** | 3 strategies × 4 dimensions | 1 strategy (top-1) |
+| **Attack prompt** | 3 strategies × 4 dimensions | 1 strategy + 1 dimension at a time |
 | **Key research question** | Which judge dimension works best? | How does window size affect adaptation? |
+| **Training steps** | 500 (screening phase) | 1000 (full training) |
 
 ---
 

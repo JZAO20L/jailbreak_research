@@ -56,6 +56,10 @@ wandb/
 # Keep important output summaries
 !**/output/**/summary.json
 
+# Experiment summary files (generated, not source)
+experiments/jailbreak_prompt_exp/experiment_summary.json
+experiments/hybrid_reward_exp/results_summary.md
+
 # ========================================
 # Session / State Files
 # ========================================

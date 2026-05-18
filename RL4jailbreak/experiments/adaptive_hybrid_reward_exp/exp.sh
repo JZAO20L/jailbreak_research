@@ -75,9 +75,13 @@ WINDOW_SIZES=("1" "2" "3" "5" "10" "20")
 # Attack prompts (from Experiment 1 top-3)
 ATTACK_PROMPTS_DEFAULT=("hypothetical_scenario" "creative_writing" "role_playing")
 
+# Judge prompt dimension (aligned with Experiment 2)
+JUDGE_PROMPT_DEFAULT="stealthiness"
+
 # Default: run all EMA beta experiments on single attack prompt
 SELECTED_EMA_BETA=""
 SELECTED_ATTACK_PROMPT=""
+SELECTED_JUDGE_PROMPT=""
 RESET_CKPT=false
 
 # =========================
@@ -91,6 +95,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --attack_prompt)
             SELECTED_ATTACK_PROMPT="$2"
+            shift 2
+            ;;
+        --judge_prompt)
+            SELECTED_JUDGE_PROMPT="$2"
             shift 2
             ;;
         --max_steps)
@@ -130,6 +138,12 @@ if [ -n "$SELECTED_ATTACK_PROMPT" ]; then
     ATTACK_PROMPTS=("$SELECTED_ATTACK_PROMPT")
 else
     ATTACK_PROMPTS=("${ATTACK_PROMPTS_DEFAULT[@]:0:1}")  # Default: only top-1
+fi
+
+if [ -n "$SELECTED_JUDGE_PROMPT" ]; then
+    JUDGE_PROMPT="$SELECTED_JUDGE_PROMPT"
+else
+    JUDGE_PROMPT="$JUDGE_PROMPT_DEFAULT"
 fi
 
 # =========================
@@ -265,11 +279,11 @@ with open('$CKPT_FILE', 'w') as f:
 run_training() {
     local ema_beta=$1
     local attack_prompt=$2
-    local exp_key="ema${ema_beta}_${attack_prompt}"
+    local exp_key="ema${ema_beta}_${attack_prompt}_${JUDGE_PROMPT}"
     local exp_output="$OUTPUT_DIR/$exp_key"
-    
+
     log "============================================================"
-    log "Training: EMA beta=$ema_beta, Attack prompt=$attack_prompt"
+    log "Training: EMA beta=$ema_beta, Attack prompt=$attack_prompt, Judge=$JUDGE_PROMPT"
     log "============================================================"
     
     mkdir -p "$exp_output"
@@ -290,6 +304,7 @@ run_training() {
         --lambda_min "$LAMBDA_MIN" \
         --lambda_max "$LAMBDA_MAX" \
         --attack_prompt "$attack_prompt" \
+        --judge_prompt "$JUDGE_PROMPT" \
         --train_data "$TRAIN_DATA" \
         --max_steps "$MAX_STEPS" \
         --learning_rate "$LEARNING_RATE" \
@@ -309,7 +324,7 @@ run_training() {
 run_evaluation() {
     local ema_beta=$1
     local attack_prompt=$2
-    local exp_key="ema${ema_beta}_${attack_prompt}"
+    local exp_key="ema${ema_beta}_${attack_prompt}_${JUDGE_PROMPT}"
     local exp_output="$OUTPUT_DIR/$exp_key"
     local lora_path="$exp_output/final_lora"
     

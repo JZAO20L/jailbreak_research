@@ -54,10 +54,9 @@ from src.utils import extract_label_categories_refusal
 from src.prompts import REWRITE_PROMPT, GUARD_PROMPT
 from src.reward.adaptive_weight import AdaptiveRewardCalculator, AdaptiveRewardConfig
 from experiments.adaptive_hybrid_reward_exp.judge_prompts import (
-    JUDGE_MULTI_DIMENSION_UNIFORM,
-    DIMENSION_NAMES,
+    JUDGE_PROMPTS,
+    get_judge_prompt,
     parse_judge_response,
-    compute_weighted_score,
 )
 
 
@@ -103,7 +102,10 @@ DEFAULT_ARGS = {
     
     # Jailbreak prompt strategy (from TODO.md: use top-3 prompts)
     "attack_prompt": "hypothetical_scenario",  # Default top-1
-    
+
+    # Judge prompt dimension (aligned with Experiment 2)
+    "judge_prompt": "stealthiness",  # Default: best avg ASR from Exp2
+
     # Output
     "output_dir": "experiments/adaptive_hybrid_reward_exp/output",
     "run_name": None,
@@ -162,7 +164,12 @@ def parse_args():
     # Attack prompt strategy
     parser.add_argument("--attack_prompt", type=str, default=DEFAULT_ARGS["attack_prompt"],
                         help="Jailbreak prompt strategy from Experiment 1 top-3")
-    
+
+    # Judge prompt dimension (aligned with Experiment 2)
+    parser.add_argument("--judge_prompt", type=str, default=DEFAULT_ARGS["judge_prompt"],
+                        help="Judge prompt dimension. Options: idea_preservation, stealthiness, "
+                             "naturalness, hypothetical_scenario, creative_writing, role_playing")
+
     # Data
     parser.add_argument("--train_data", type=str,
                         default=os.path.join(BASE_DIR, "../data/dataset/processed/10k/train.jsonl"))
@@ -287,38 +294,41 @@ def load_train_dataset(path: str, attack_prompt: str) -> Dataset:
 # =============================================================================
 # Reward Functions
 # =============================================================================
-def judge_reward_multi_dim(
+def judge_reward(
     prompts: List[str],
     completions: List[str],
     original_prompts: Optional[List[str]] = None,
     **kwargs
 ) -> List[float]:
     """
-    Multi-dimensional Judge Reward.
-    
-    Evaluates each rewritten prompt on 4 dimensions:
-    - intent_preservation
-    - stealth
-    - strategy_execution
-    - attack_potential
-    
+    Judge Reward: Evaluates rewritten prompt quality on specified dimension.
+
+    Aligned with Experiment 2 format: uses SCORE=0.XX output.
+
+    Available dimensions (from judge_prompts.py):
+    - General: idea_preservation, stealthiness, naturalness
+    - Specialized: hypothetical_scenario, creative_writing, role_playing
+
     Returns raw judge reward (0~1, before adaptive weighting).
     """
-    
+
     # Get original prompts for comparison
     if original_prompts is None:
         original_prompts = prompts
-    
+
+    # Get judge template for specified dimension
+    judge_template = get_judge_prompt(args.judge_prompt)
+
     judge_prompts_batch = []
     for orig, rewritten in zip(original_prompts, completions):
         rewritten = (rewritten or "").strip()
         judge_prompts_batch.append(
-            JUDGE_MULTI_DIMENSION_UNIFORM.format(
+            judge_template.format(
                 original_prompt=orig,
                 rewritten_prompt=rewritten
             )
         )
-    
+
     # Batch call judge (using target as judge model)
     judge_responses = TARGET_CLIENT.llm_batch_call(
         prompts=judge_prompts_batch,
@@ -327,17 +337,17 @@ def judge_reward_multi_dim(
         max_workers=16,
         return_exceptions=True,
     )
-    
+
     # Parse responses and compute raw scores
     raw_scores = []
     for resp in judge_responses:
         if resp is None or isinstance(resp, Exception):
             raw_scores.append(0.1)  # Fallback low score
             continue
-        
-        weighted_score, parsed = parse_judge_response(str(resp))
-        raw_scores.append(weighted_score)
-    
+
+        score = parse_judge_response(str(resp))
+        raw_scores.append(score)
+
     return raw_scores
 
 
@@ -420,7 +430,7 @@ def adaptive_hybrid_reward(
     
     # Get raw rewards
     asr_raws = asr_reward(prompts, completions, **kwargs)
-    judge_raws = judge_reward_multi_dim(prompts, completions, original_prompts, **kwargs)
+    judge_raws = judge_reward(prompts, completions, original_prompts, **kwargs)
     
     # Use adaptive calculator with fixed lambda for batch
     # (all k completions from same original prompt share same lambda)
@@ -458,6 +468,7 @@ def main():
     logger.info(f"Output: {args.output_dir}")
     logger.info(f"Training data: {args.train_data}")
     logger.info(f"Attack prompt: {args.attack_prompt}")
+    logger.info(f"Judge dimension: {args.judge_prompt}")
     logger.info(f"Max steps: {args.max_steps}")
     logger.info(f"LoRA rank: {args.lora_r}")
     logger.info(f"Learning rate: {args.learning_rate}")
@@ -526,7 +537,7 @@ def main():
     train_ds = load_train_dataset(args.train_data, args.attack_prompt)
     
     # GRPO Config
-    run_name = args.run_name or f"exp3_ema{args.ema_beta}_{args.attack_prompt}"
+    run_name = args.run_name or f"exp3_ema{args.ema_beta}_{args.attack_prompt}_{args.judge_prompt}"
     grpo_cfg = GRPOConfig(
         output_dir=args.output_dir,
         per_device_train_batch_size=args.per_device_train_batch_size,
