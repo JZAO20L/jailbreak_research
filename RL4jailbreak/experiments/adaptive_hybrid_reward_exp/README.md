@@ -34,11 +34,9 @@ final_reward = lambda × ASR_reward + (1 - lambda) × Judge_reward
 | EMA Beta | Window Size | Steps in warmup |
 |----------|-------------|-----------------|
 | 0.0 | 1 step | 1 |
-| 0.5 | 2 steps | 2 |
 | 0.67 | 3 steps | 3 |
 | 0.8 | 5 steps | 5 |
 | 0.9 | 10 steps | 10 |
-| 0.95 | 20 steps | 20 |
 
 **Physical meaning**:
 - `var_asr` small → ASR provides little discrimination → reduce lambda → rely more on judge
@@ -88,16 +86,14 @@ adaptive_hybrid_reward_exp/
 
 ### Ablation on EMA Beta (Window Size)
 
-We test 6 different EMA beta values, corresponding to different window sizes:
+We test 4 different EMA beta values, corresponding to different window sizes:
 
 | EMA Beta | Window Size | Description |
 |----------|-------------|-------------|
 | 0.0 | 1 | No smoothing, instant adaptation |
-| 0.5 | 2 | Short window, quick adaptation |
 | 0.67 | 3 | Medium-short window |
 | 0.8 | 5 | Medium window |
 | 0.9 | 10 | Medium-long window |
-| 0.95 | 20 | Long window, slow adaptation |
 
 **Hypothesis**: Larger window sizes provide more stable lambda estimates but slower adaptation. We expect a sweet spot around window=10 (beta=0.9).
 
@@ -137,7 +133,7 @@ Default: `stealthiness` (best average ASR ~26.1% across strategies in Experiment
 ```bash
 cd /mnt/bn/chenxiong/mlx/users/jiazixiao/jailbreak_research/RL4jailbreak
 
-# Run all 6 EMA beta experiments (default: hypothetical_scenario)
+# Run all 4 EMA beta experiments (default: hypothetical_scenario)
 bash experiments/adaptive_hybrid_reward_exp/exp.sh
 ```
 
@@ -145,7 +141,7 @@ bash experiments/adaptive_hybrid_reward_exp/exp.sh
 
 ```bash
 # Single EMA beta
-bash experiments/adaptive_hybrid_reward_exp/exp.sh --ema_beta 0.95
+bash experiments/adaptive_hybrid_reward_exp/exp.sh --ema_beta 0.9
 
 # Different attack prompt
 bash experiments/adaptive_hybrid_reward_exp/exp.sh --attack_prompt creative_writing
@@ -169,7 +165,7 @@ bash experiments/adaptive_hybrid_reward_exp/exp.sh --reset
 # bash scripts/start_guard.sh
 
 python experiments/adaptive_hybrid_reward_exp/adaptive_hybrid_reward_grpo.py \
-    --ema_beta 0.95 \
+    --ema_beta 0.9 \
     --attack_prompt hypothetical_scenario \
     --max_steps 500 \
     --output_dir experiments/adaptive_hybrid_reward_exp/output/test
@@ -184,7 +180,7 @@ python experiments/adaptive_hybrid_reward_exp/adaptive_hybrid_reward_grpo.py \
 Each experiment produces:
 
 ```
-output/ema0.95_hypothetical_scenario/
+output/ema0.9_hypothetical_scenario/
 ├── final_lora/                 # LoRA weights
 │   ├── adapter_config.json
 │   └── adapter_model.safetensors
@@ -214,7 +210,7 @@ ASR evaluation results in `eval_results/`:
 
 ```json
 {
-  "experiment": "ema0.95_hypothetical_scenario_stealthiness",
+  "experiment": "ema0.9_hypothetical_scenario_stealthiness",
   "asr": 0.42,
   "total_samples": 1000,
   "unsafe_count": 420,
@@ -277,7 +273,7 @@ config = AdaptiveRewardConfig(
     delta=-2.0,         # Sigmoid bias
     lambda_min=0.2,     # Lower bound
     lambda_max=0.8,     # Upper bound
-    ema_beta=0.95,      # EMA smoothing (window ~20 steps)
+    ema_beta=0.9,       # EMA smoothing (window ~10 steps)
 )
 calculator = AdaptiveRewardCalculator(config)
 

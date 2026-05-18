@@ -3,8 +3,8 @@
 # Experiment 3: Adaptive Hybrid Reward GRPO - Execution Script
 #
 # This script runs 6 experiments with different EMA beta values:
-#   EMA beta: 0, 0.5, 0.67, 0.8, 0.9, 0.95
-#   Window size: 1, 2, 3, 5, 10, 20
+#   EMA beta: 0, 0.67, 0.8, 0.9
+#   Window size: 1, 3, 5, 10
 #
 # Each experiment:
 #   1. Start Target + Guard services (GPU1)
@@ -13,8 +13,8 @@
 #   4. Clean up for next experiment
 #
 # Usage:
-#   bash exp.sh                     # Run all 6 experiments
-#   bash exp.sh --ema_beta 0.95     # Run single experiment
+#   bash exp.sh                     # Run all 4 experiments
+#   bash exp.sh --ema_beta 0.9      # Run single experiment
 #   bash exp.sh --attack_prompt hypothetical_scenario  # Use specific attack prompt
 #   bash exp.sh --reset             # Clear checkpoints and start fresh
 #   bash exp.sh --max_steps 500     # Override max steps
@@ -69,8 +69,8 @@ LAMBDA_MAX=0.8
 
 # EMA beta values for ablation (from TODO.md)
 # Window size = 1/(1-beta)
-EMA_BETAS_DEFAULT=(0 0.5 0.67 0.8 0.9 0.95)
-WINDOW_SIZES=("1" "2" "3" "5" "10" "20")
+EMA_BETAS_DEFAULT=(0 0.67 0.8 0.9)
+WINDOW_SIZES=("1" "3" "5" "10")
 
 # Attack prompts (from Experiment 1 top-3)
 ATTACK_PROMPTS_DEFAULT=("hypothetical_scenario" "creative_writing" "role_playing")
@@ -113,8 +113,8 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [options]"
             echo ""
             echo "Options:"
-            echo "  --ema_beta VALUE        Run single EMA beta experiment (default: all 6)"
-            echo "                           Values: 0, 0.5, 0.67, 0.8, 0.9, 0.95"
+            echo "  --ema_beta VALUE        Run single EMA beta experiment (default: all 4)"
+            echo "                           Values: 0, 0.67, 0.8, 0.9"
             echo "  --attack_prompt NAME    Attack prompt strategy (default: hypothetical_scenario)"
             echo "  --max_steps N           Training steps (default: 500)"
             echo "  --reset                 Clear checkpoints and start fresh"

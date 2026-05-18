@@ -24,7 +24,7 @@ import argparse
 # Known values for parsing experiment names
 # =============================================================================
 
-KNOWN_EMA_BETAS = ["0", "0.5", "0.67", "0.8", "0.9", "0.95"]
+KNOWN_EMA_BETAS = ["0", "0.67", "0.8", "0.9"]
 
 KNOWN_ATTACK_PROMPTS = [
     "hypothetical_scenario",
@@ -54,7 +54,7 @@ def parse_exp_name(exp_name: str) -> Dict[str, str]:
     Parse experiment directory name.
 
     Format: ema{beta}_{attack_prompt}_{judge_prompt}
-    Example: ema0.95_hypothetical_scenario_stealthiness
+    Example: ema0.9_hypothetical_scenario_stealthiness
     """
     # Try to match known pattern
     for ema_beta in KNOWN_EMA_BETAS:

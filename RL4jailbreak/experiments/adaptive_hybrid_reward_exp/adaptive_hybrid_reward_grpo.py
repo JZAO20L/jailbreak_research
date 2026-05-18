@@ -13,16 +13,14 @@ Key components:
 3. ASR Reward: Standard attack success rate via Target+Guard
 
 Usage:
-    # Default EMA beta=0.95 (window~20)
-    python adaptive_hybrid_reward_grpo.py --ema_beta 0.95
-    
+    # Default EMA beta=0.9 (window~10)
+    python adaptive_hybrid_reward_grpo.py --ema_beta 0.9
+
     # Different EMA beta values for ablation
     python adaptive_hybrid_reward_grpo.py --ema_beta 0.0   # window=1
-    python adaptive_hybrid_reward_grpo.py --ema_beta 0.5   # window=2
     python adaptive_hybrid_reward_grpo.py --ema_beta 0.67  # window=3
     python adaptive_hybrid_reward_grpo.py --ema_beta 0.8   # window=5
     python adaptive_hybrid_reward_grpo.py --ema_beta 0.9   # window=10
-    python adaptive_hybrid_reward_grpo.py --ema_beta 0.95  # window=20
 
 Reference: TODO.md (Experiment 3), NEW_IDEA.md
 """
@@ -89,7 +87,7 @@ DEFAULT_ARGS = {
     "vllm_gpu_memory_utilization": 0.3,
     
     # Adaptive reward config (from TODO.md)
-    "ema_beta": 0.95,            # Default: window~20
+    "ema_beta": 0.9,             # Default: window~10
     "alpha": 2.0,                # Variance ratio sensitivity
     "delta": -2.0,               # Sigmoid bias (ratio=1 → lambda=0.5, neutral)
     "lambda_min": 0.2,           # ASR weight lower bound
@@ -126,7 +124,7 @@ def parse_args():
     # EMA beta (key parameter for ablation)
     parser.add_argument("--ema_beta", type=float, default=DEFAULT_ARGS["ema_beta"],
                         help="EMA smoothing parameter. Window size = 1/(1-beta). "
-                             "Values: 0, 0.5, 0.67, 0.8, 0.9, 0.95 → windows: 1,2,3,5,10,20")
+                             "Values: 0, 0.67, 0.8, 0.9 → windows: 1,3,5,10")
     
     # Adaptive reward parameters
     parser.add_argument("--alpha", type=float, default=DEFAULT_ARGS["alpha"],
