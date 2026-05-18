@@ -170,18 +170,31 @@ class AdaptiveRewardCalculator:
         # Compute variance over window
         self._var_asr = self._compute_variance(self._asr_history, window_size)
         self._var_judge = self._compute_variance(self._judge_history, window_size)
-        
-        # Compute ratio (var_judge / var_asr)
-        # When var_asr small → ratio large → sigmoid → lambda increases? 
-        # No, we want: var_asr small → lambda decrease
-        # So ratio should be var_asr / var_judge (inverse)
-        # Or adjust delta sign
-        
-        # Original formula from TODO: ratio = var_judge / var_asr
-        # But physical meaning should be: high var_asr → lambda high
-        # Let's use: ratio = var_asr / var_judge
-        # Then sigmoid(alpha * ratio + delta):
-        #   - ratio high (var_asr large) → sigmoid large → lambda high ✓
+
+        # Handle edge case: both variances are zero
+        # This happens early in training when ASR is all 0/0.5/1 (no variation)
+        # and judge scores are nearly uniform.
+        # In this case, fall back to 1:1 (lambda=0.5) — neither reward source
+        # has discriminative power, so adaptive weighting should not bias either way.
+        if self._var_asr < 1e-8 and self._var_judge < 1e-8:
+            # Both have no variation → neutral 1:1 weight
+            ratio = 1.0  # Neutral ratio
+            lambda_raw = self.config.lambda_init  # Fall back to 0.5
+            self._ratio = ratio
+            self._lambda_raw = lambda_raw
+            # EMA smooth towards lambda_init
+            self._lambda = (
+                self.config.ema_beta * self._lambda +
+                (1 - self.config.ema_beta) * lambda_raw
+            )
+            self._lambda = max(self.config.lambda_min,
+                              min(self.config.lambda_max, self._lambda))
+            final_reward = self._lambda * asr_raw + (1 - self._lambda) * judge_raw
+            return final_reward
+
+        # Compute ratio (var_asr / var_judge)
+        # When var_asr small → ratio small → sigmoid → lambda decreases (rely on Judge)
+        # When var_asr large → ratio large → sigmoid → lambda increases (rely on ASR)
         
         ratio = self._var_asr / (self._var_judge + self.config.eps)
         self._ratio = ratio
@@ -270,15 +283,20 @@ class AdaptiveRewardCalculator:
             if len(self._asr_history) > window_size:
                 self._var_asr = self._compute_variance(self._asr_history, window_size)
                 self._var_judge = self._compute_variance(self._judge_history, window_size)
-                
-                ratio = self._var_asr / (self._var_judge + self.config.eps)
+
+                # Handle edge case: both variances are zero
+                if self._var_asr < 1e-8 and self._var_judge < 1e-8:
+                    ratio = 1.0  # Neutral ratio
+                    lambda_raw = self.config.lambda_init  # Fall back to 0.5
+                else:
+                    ratio = self._var_asr / (self._var_judge + self.config.eps)
+                    lambda_raw = torch.sigmoid(
+                        torch.tensor(self.config.alpha * ratio + self.config.delta)
+                    ).item()
+
                 self._ratio = ratio
-                
-                lambda_raw = torch.sigmoid(
-                    torch.tensor(self.config.alpha * ratio + self.config.delta)
-                ).item()
                 self._lambda_raw = lambda_raw
-                
+
                 self._lambda = (
                     self.config.ema_beta * self._lambda +
                     (1 - self.config.ema_beta) * lambda_raw
