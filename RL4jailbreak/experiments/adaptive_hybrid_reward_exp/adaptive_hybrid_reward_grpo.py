@@ -419,42 +419,76 @@ def adaptive_hybrid_reward(
 ) -> List[float]:
     """
     Adaptive Hybrid Reward: Combines ASR and Judge rewards with adaptive weighting.
-    
-    Key mechanism:
-    1. Compute raw ASR reward and raw Judge reward
-    2. Update lambda based on variance ratio
-    3. Final reward = lambda * ASR + (1-lambda) * Judge
-    
-    This function is called per batch in GRPO training.
+
+    Window is measured in **training steps**, not samples.
+    Each step:
+    1. Compute raw ASR and Judge rewards for each completion
+    2. Group by original prompt (k completions per prompt)
+    3. Compute variance of rewards within each group (across k completions)
+    4. Average variances across batch → one (var_asr, var_judge) pair per step
+    5. Update lambda based on this step's variance ratio
+    6. Final reward = lambda * ASR + (1-lambda) * Judge
     """
-    
-    # Get raw rewards
+
+    # Step 1: Get raw rewards for each completion
     asr_raws = asr_reward(prompts, completions, **kwargs)
     judge_raws = judge_reward(prompts, completions, original_prompts, **kwargs)
-    
-    # Use adaptive calculator with fixed lambda for batch
-    # (all k completions from same original prompt share same lambda)
-    final_rewards = adaptive_calculator.compute_batch_fixed(
-        asr_raws, judge_raws, update_after=True
-    )
-    
+
+    # Step 2-3: Group by original prompt and compute per-group variance
+    # In GRPO, prompts list contains repeated prompts (each repeated k times)
+    # Completions are in the same order
+    k = args.num_generations  # 8
+
+    step_var_asr_list: List[float] = []
+    step_var_judge_list: List[float] = []
+
+    for i in range(0, len(completions), k):
+        group_asr = asr_raws[i:i+k]
+        group_judge = judge_raws[i:i+k]
+
+        if len(group_asr) >= 2:
+            var_asr = float(torch.var(torch.tensor(group_asr, dtype=torch.float32)).item())
+            var_judge = float(torch.var(torch.tensor(group_judge, dtype=torch.float32)).item())
+            step_var_asr_list.append(var_asr)
+            step_var_judge_list.append(var_judge)
+        else:
+            step_var_asr_list.append(0.0)
+            step_var_judge_list.append(0.0)
+
+    # Step 4: Average variance across prompts in this batch
+    n_prompts = len(step_var_asr_list)
+    avg_var_asr = sum(step_var_asr_list) / n_prompts if n_prompts > 0 else 0.0
+    avg_var_judge = sum(step_var_judge_list) / n_prompts if n_prompts > 0 else 0.0
+
+    # Step 5: Update lambda with this step's variances
+    adaptive_calculator.update_step(avg_var_asr, avg_var_judge)
+
+    # Step 6: Compute final rewards using current lambda
+    lambda_val = adaptive_calculator.get_lambda()
+    final_rewards = [
+        lambda_val * a + (1 - lambda_val) * j
+        for a, j in zip(asr_raws, judge_raws)
+    ]
+
     # Log lambda statistics
     stats = adaptive_calculator.get_statistics()
     lambda_history.append({
-        "step": len(lambda_history) + 1,
+        "step": stats["step"],
         "lambda": stats["lambda"],
         "var_asr": stats["var_asr"],
         "var_judge": stats["var_judge"],
         "ratio": stats["ratio"],
-        "batch_size": len(prompts),
+        "batch_size": n_prompts,
     })
-    
+
     # Periodic logging
-    if len(lambda_history) % 10 == 0:
-        logger.info(f"[Adaptive] λ={stats['lambda']:.3f} | "
+    if stats["step"] % 10 == 0:
+        window_size = adaptive_config.get_window_size()
+        logger.info(f"[Adaptive] step={stats['step']} λ={stats['lambda']:.3f} | "
                     f"var_asr={stats['var_asr']:.4f} var_judge={stats['var_judge']:.4f} | "
-                    f"ratio={stats['ratio']:.2f}")
-    
+                    f"ratio={stats['ratio']:.2f} | "
+                    f"window={'warmup' if stats['step'] <= window_size else 'adaptive'}")
+
     return final_rewards
 
 

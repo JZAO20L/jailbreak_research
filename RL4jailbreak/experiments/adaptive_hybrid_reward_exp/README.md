@@ -17,11 +17,28 @@ The challenge is that ASR reward variance varies during training - sometimes hig
 Our solution: **Adaptive lambda** that adjusts the ASR/Judge weight ratio based on variance ratio:
 
 ```
+# Per training step:
+#   1. Group k=8 completions by original prompt
+#   2. Compute variance of ASR rewards within group → var_asr
+#   3. Compute variance of Judge rewards within group → var_judge
+#   4. Average variances across batch
+#
 ratio = var_asr / (var_judge + eps)
 lambda_raw = sigmoid(alpha × ratio + delta)
-lambda_new = ema_beta × lambda_old + (1 - ema_beta) × lambda_raw
+lambda = ema_beta × lambda_old + (1 - ema_beta) × lambda_raw
 final_reward = lambda × ASR_reward + (1 - lambda) × Judge_reward
 ```
+
+**Window**: Measured in **training steps** (not samples). Each step appends one variance pair.
+
+| EMA Beta | Window Size | Steps in warmup |
+|----------|-------------|-----------------|
+| 0.0 | 1 step | 1 |
+| 0.5 | 2 steps | 2 |
+| 0.67 | 3 steps | 3 |
+| 0.8 | 5 steps | 5 |
+| 0.9 | 10 steps | 10 |
+| 0.95 | 20 steps | 20 |
 
 **Physical meaning**:
 - `var_asr` small → ASR provides little discrimination → reduce lambda → rely more on judge
@@ -89,7 +106,7 @@ We test 6 different EMA beta values, corresponding to different window sizes:
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | `alpha` | 2.0 | Variance ratio sensitivity |
-| `delta` | -1.0 | Sigmoid bias (negative → initial preference for ASR) |
+| `delta` | -1.0 | Sigmoid bias (negative → prefer Judge when ratio=1) |
 | `lambda_min` | 0.2 | ASR weight lower bound |
 | `lambda_max` | 0.8 | ASR weight upper bound |
 | `max_steps` | 500 | Training steps (fixed for ablation, aligned with Exp2) |
@@ -260,16 +277,25 @@ config = AdaptiveRewardConfig(
     delta=-1.0,         # Sigmoid bias
     lambda_min=0.2,     # Lower bound
     lambda_max=0.8,     # Upper bound
-    ema_beta=0.95,      # EMA smoothing (window ~20)
+    ema_beta=0.95,      # EMA smoothing (window ~20 steps)
 )
 calculator = AdaptiveRewardCalculator(config)
 
-# In reward function
-for asr_raw, judge_raw in rewards:
-    final_reward = calculator.update(asr_raw, judge_raw)
-    
-# Or batch mode (fixed lambda for all)
-final_rewards = calculator.compute_batch_fixed(asr_raws, judge_raws, update_after=True)
+# In reward function, once per training step:
+# 1. Compute raw rewards for all completions
+asr_raws = asr_reward(prompts, completions)
+judge_raws = judge_reward(prompts, completions)
+
+# 2. Group by original prompt (k completions each), compute variance
+var_asr = variance_of(asr_raws_for_one_prompt)
+var_judge = variance_of(judge_raws_for_one_prompt)
+
+# 3. Update lambda with this step's variances
+calculator.update_step(var_asr, var_judge)
+
+# 4. Get current lambda for final rewards
+lambda_val = calculator.get_lambda()
+final_rewards = [lambda_val * a + (1-lambda_val) * j for a, j in zip(asr_raws, judge_raws)]
 
 # Get statistics for logging
 stats = calculator.get_statistics()
