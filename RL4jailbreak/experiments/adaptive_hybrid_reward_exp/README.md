@@ -200,13 +200,41 @@ ASR evaluation results in `eval_results/`:
 
 ```json
 {
-  "experiment": "ema0.95_hypothetical_scenario",
+  "experiment": "ema0.95_hypothetical_scenario_stealthiness",
   "asr": 0.42,
   "total_samples": 1000,
   "unsafe_count": 420,
   "controversial_count": 50,
   "safe_count": 530
 }
+```
+
+### Summary Report
+
+After all experiments complete, `summarize_results.py` generates a summary:
+
+```
+output/
+├── ema0.0_hypothetical_scenario_stealthiness/
+├── ema0.5_hypothetical_scenario_stealthiness/
+├── ...
+└── results_summary.md     <-- Auto-generated summary
+```
+
+View summary in different formats:
+
+```bash
+# Text format (default)
+python experiments/adaptive_hybrid_reward_exp/summarize_results.py \
+    --output_dir experiments/adaptive_hybrid_reward_exp/output
+
+# Markdown table
+python experiments/adaptive_hybrid_reward_exp/summarize_results.py \
+    --output_dir experiments/adaptive_hybrid_reward_exp/output --format markdown
+
+# JSON
+python experiments/adaptive_hybrid_reward_exp/summarize_results.py \
+    --output_dir experiments/adaptive_hybrid_reward_exp/output --format json
 ```
 
 ---

@@ -468,10 +468,8 @@ log "============================================================"
 log "Results in: $OUTPUT_DIR"
 log ""
 
-# Generate summary (if summarize script exists)
-if [ -f "$SCRIPT_DIR/summarize_results.py" ]; then
-    log "Generating summary report..."
-    python "$SCRIPT_DIR/summarize_results.py" --output_dir "$OUTPUT_DIR"
-fi
+# Generate summary
+log "Generating summary report..."
+python3 "$SCRIPT_DIR/summarize_results.py" --output_dir "$OUTPUT_DIR"
 
 log "============================================================"
