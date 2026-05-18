@@ -17,7 +17,7 @@
 #   bash exp.sh --ema_beta 0.95     # Run single experiment
 #   bash exp.sh --attack_prompt hypothetical_scenario  # Use specific attack prompt
 #   bash exp.sh --reset             # Clear checkpoints and start fresh
-#   bash exp.sh --max_steps 1000    # Override max steps
+#   bash exp.sh --max_steps 500     # Override max steps
 #
 # Reference: TODO.md (Experiment 3), NEW_IDEA.md
 # =============================================================================
@@ -56,7 +56,7 @@ VLLM_GPU_UTIL_GUARD=0.4
 VLLM_GPU_UTIL_POLICY=0.9
 
 # Training config (from TODO.md)
-MAX_STEPS="${MAX_STEPS:-1000}"
+MAX_STEPS="${MAX_STEPS:-500}"
 LEARNING_RATE="${LEARNING_RATE:-1e-5}"
 NUM_GENERATIONS="${NUM_GENERATIONS:-8}"
 BETA="${BETA:-0.05}"
@@ -116,7 +116,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --ema_beta VALUE        Run single EMA beta experiment (default: all 6)"
             echo "                           Values: 0, 0.5, 0.67, 0.8, 0.9, 0.95"
             echo "  --attack_prompt NAME    Attack prompt strategy (default: hypothetical_scenario)"
-            echo "  --max_steps N           Training steps (default: 1000)"
+            echo "  --max_steps N           Training steps (default: 500)"
             echo "  --reset                 Clear checkpoints and start fresh"
             echo "  --help                  Show this help"
             exit 0
