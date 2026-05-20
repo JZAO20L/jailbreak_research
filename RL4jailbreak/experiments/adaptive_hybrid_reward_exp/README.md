@@ -90,10 +90,9 @@ We test 4 different EMA beta values, corresponding to different window sizes:
 
 | EMA Beta | Window Size | Description |
 |----------|-------------|-------------|
-| 0.0 | 1 | No smoothing, instant adaptation |
-| 0.67 | 3 | Medium-short window |
-| 0.8 | 5 | Medium window |
-| 0.9 | 10 | Medium-long window |
+| 0.0 | 1 step | No smoothing, instant adaptation |
+| 0.8 | 5 steps | Medium window |
+| 0.9 | 10 steps | Medium-long window |
 
 **Hypothesis**: Larger window sizes provide more stable lambda estimates but slower adaptation. We expect a sweet spot around window=10 (beta=0.9).
 
@@ -103,10 +102,10 @@ We test 4 different EMA beta values, corresponding to different window sizes:
 |-----------|-------|-------------|
 | `alpha` | 2.0 | Variance ratio sensitivity |
 | `delta` | -2.0 | Sigmoid bias (ratio=1 → lambda=0.5, neutral 1:1) |
-| `lambda_min` | 0.2 | ASR weight lower bound |
-| `lambda_max` | 0.8 | ASR weight upper bound |
+| `lambda_min` | 0.1 | ASR weight lower bound |
+| `lambda_max` | 0.9 | ASR weight upper bound |
 | `max_steps` | 500 | Training steps (fixed for ablation, aligned with Exp2) |
-| `attack_prompt` | role_playing | Best strategy from Experiment 2 (27.3%) |
+| `attack_prompt` | hypothetical_scenario | Best from Experiment 2 re-eval (27.0%) |
 
 ### Judge Dimensions
 
@@ -122,7 +121,7 @@ Aligned with Experiment 2, using single-dimension scoring (`SCORE=0.XX` format):
 - `creative_writing`: Quality of creative writing framing
 - `role_playing`: Quality of role-playing framing
 
-Default: `role_playing` (specialized dimension for role_playing strategy, 27.3% ASR in Experiment 2)
+Default: `idea_preservation` (best overall, +0.8% vs baseline 26.2% → 27.0% after training)
 
 ---
 
@@ -133,7 +132,7 @@ Default: `role_playing` (specialized dimension for role_playing strategy, 27.3% 
 ```bash
 cd /mnt/bn/chenxiong/mlx/users/jiazixiao/jailbreak_research/RL4jailbreak
 
-# Run all 4 EMA beta experiments (default: role_playing + role_playing)
+# Run all 9 experiments (3 combinations × 3 EMA beta values)
 bash experiments/adaptive_hybrid_reward_exp/exp.sh
 ```
 
@@ -143,11 +142,9 @@ bash experiments/adaptive_hybrid_reward_exp/exp.sh
 # Single EMA beta
 bash experiments/adaptive_hybrid_reward_exp/exp.sh --ema_beta 0.9
 
-# Different attack prompt
-bash experiments/adaptive_hybrid_reward_exp/exp.sh --attack_prompt creative_writing
-
-# Different judge dimension (aligned with Experiment 2)
-bash experiments/adaptive_hybrid_reward_exp/exp.sh --judge_prompt idea_preservation
+# Single combination
+bash experiments/adaptive_hybrid_reward_exp/exp.sh \
+    --combination hypothetical_scenario:idea_preservation
 ```
 
 ### Reset and Start Fresh
@@ -166,8 +163,8 @@ bash experiments/adaptive_hybrid_reward_exp/exp.sh --reset
 
 python experiments/adaptive_hybrid_reward_exp/adaptive_hybrid_reward_grpo.py \
     --ema_beta 0.9 \
-    --attack_prompt role_playing \
-    --judge_prompt role_playing \
+    --attack_prompt hypothetical_scenario \
+    --judge_prompt idea_preservation \
     --max_steps 500 \
     --output_dir experiments/adaptive_hybrid_reward_exp/output/test
 ```

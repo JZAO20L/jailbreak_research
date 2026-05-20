@@ -72,15 +72,16 @@ LAMBDA_MAX=0.9
 EMA_BETAS_DEFAULT=(0 0.8 0.9)
 WINDOW_SIZES=("1" "5" "10")
 
-# 3 prompt combinations (best from Experiment 2)
+# 3 prompt combinations (best from Experiment 2 re-evaluation)
 # Each: attack_prompt + its best judge dimension
-# 1. role_playing + role_playing = 27.3%
-# 2. hypothetical_scenario + naturalness = 26.7%
-# 3. creative_writing + stealthiness = 26.1%
+# Based on: base model baseline → trained LoRA re-eval (same test.jsonl)
+# 1. hypothetical_scenario + idea_preservation = 27.0% (+0.8% vs baseline 26.2%)
+# 2. hypothetical_scenario + naturalness = 26.7% (+0.5% vs baseline 26.2%)
+# 3. role_playing + idea_preservation = 26.4% (+0.2% vs baseline 26.2%)
 COMBINATIONS_DEFAULT=(
-    "role_playing:role_playing"
+    "hypothetical_scenario:idea_preservation"
     "hypothetical_scenario:naturalness"
-    "creative_writing:stealthiness"
+    "role_playing:idea_preservation"
 )
 
 SELECTED_COMBINATION=""
@@ -114,9 +115,9 @@ while [[ $# -gt 0 ]]; do
             echo "  --ema_beta VALUE        Run single EMA beta experiment (default: all 3)"
             echo "                           Values: 0, 0.8, 0.9"
             echo "  --combination ATTACK:JUDGE  Run single prompt combination"
-            echo "                           Values: role_playing:role_playing,"
+            echo "                           Values: hypothetical_scenario:idea_preservation,"
             echo "                           hypothetical_scenario:naturalness,"
-            echo "                           creative_writing:stealthiness"
+            echo "                           role_playing:idea_preservation"
             echo "  --max_steps N           Training steps (default: 500)"
             echo "  --reset                 Clear checkpoints and start fresh"
             echo "  --help                  Show this help"

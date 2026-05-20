@@ -99,10 +99,10 @@ DEFAULT_ARGS = {
     "target_max_tokens": 512,
     
     # Jailbreak prompt strategy (from TODO.md: use top-3 prompts)
-    "attack_prompt": "role_playing",       # Exp2 best (27.3%)
+    "attack_prompt": "hypothetical_scenario",  # Exp2 re-eval best (27.0%)
 
-    # Judge prompt dimension (aligned with Experiment 2)
-    "judge_prompt": "role_playing",        # Specialized dimension, best for role_playing (27.3%)
+    # Judge prompt dimension (aligned with Experiment 2 re-evaluation)
+    "judge_prompt": "idea_preservation",       # Best overall (+0.8% vs baseline)
 
     # Output
     "output_dir": "experiments/adaptive_hybrid_reward_exp/output",

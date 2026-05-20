@@ -40,11 +40,11 @@ VLLM_GPU_UTIL_TARGET=0.4
 VLLM_MAX_MODEL_LEN_GUARD=8192
 VLLM_GPU_UTIL_GUARD=0.4
 
-# 3个最佳prompt组合（来自实验2，与exp.sh一致）
+# 3个最佳prompt组合（来自实验2重评估，与exp.sh一致）
 COMBINATIONS=(
-    "role_playing:role_playing"
+    "hypothetical_scenario:idea_preservation"
     "hypothetical_scenario:naturalness"
-    "creative_writing:stealthiness"
+    "role_playing:idea_preservation"
 )
 
 # =========================
