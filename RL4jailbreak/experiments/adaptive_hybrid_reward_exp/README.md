@@ -106,7 +106,7 @@ We test 4 different EMA beta values, corresponding to different window sizes:
 | `lambda_min` | 0.2 | ASR weight lower bound |
 | `lambda_max` | 0.8 | ASR weight upper bound |
 | `max_steps` | 500 | Training steps (fixed for ablation, aligned with Exp2) |
-| `attack_prompt` | hypothetical_scenario | Top-1 strategy from Experiment 1 |
+| `attack_prompt` | role_playing | Best strategy from Experiment 2 (27.3%) |
 
 ### Judge Dimensions
 
@@ -122,7 +122,7 @@ Aligned with Experiment 2, using single-dimension scoring (`SCORE=0.XX` format):
 - `creative_writing`: Quality of creative writing framing
 - `role_playing`: Quality of role-playing framing
 
-Default: `stealthiness` (best average ASR ~26.1% across strategies in Experiment 2)
+Default: `role_playing` (specialized dimension for role_playing strategy, 27.3% ASR in Experiment 2)
 
 ---
 
@@ -133,7 +133,7 @@ Default: `stealthiness` (best average ASR ~26.1% across strategies in Experiment
 ```bash
 cd /mnt/bn/chenxiong/mlx/users/jiazixiao/jailbreak_research/RL4jailbreak
 
-# Run all 4 EMA beta experiments (default: hypothetical_scenario)
+# Run all 4 EMA beta experiments (default: role_playing + role_playing)
 bash experiments/adaptive_hybrid_reward_exp/exp.sh
 ```
 
@@ -166,7 +166,8 @@ bash experiments/adaptive_hybrid_reward_exp/exp.sh --reset
 
 python experiments/adaptive_hybrid_reward_exp/adaptive_hybrid_reward_grpo.py \
     --ema_beta 0.9 \
-    --attack_prompt hypothetical_scenario \
+    --attack_prompt role_playing \
+    --judge_prompt role_playing \
     --max_steps 500 \
     --output_dir experiments/adaptive_hybrid_reward_exp/output/test
 ```

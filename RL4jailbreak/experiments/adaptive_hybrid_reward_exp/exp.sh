@@ -76,7 +76,7 @@ WINDOW_SIZES=("1" "3" "5" "10")
 ATTACK_PROMPTS_DEFAULT=("hypothetical_scenario" "creative_writing" "role_playing")
 
 # Judge prompt dimension (aligned with Experiment 2)
-JUDGE_PROMPT_DEFAULT="stealthiness"
+JUDGE_PROMPT_DEFAULT="role_playing"
 
 # Default: run all EMA beta experiments on single attack prompt
 SELECTED_EMA_BETA=""
