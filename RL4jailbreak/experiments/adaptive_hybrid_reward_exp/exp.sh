@@ -455,19 +455,6 @@ mkdir -p "$OUTPUT_DIR"
 # Ensure Target + Guard running (shared across experiments)
 ensure_target_guard_running
 
-# =========================
-# Baseline Evaluation (before training models)
-# =========================
-log ""
-log "============================================================"
-log "Baseline Evaluation: Untrained model + same rewrite prompt"
-log "============================================================"
-for combination in "${COMBINATIONS[@]}"; do
-    attack_prompt="${combination%%:*}"
-    judge_prompt="${combination##*:}"
-    run_baseline_evaluation "$attack_prompt" "$judge_prompt"
-done
-
 # Run experiments
 EXP_IDX=0
 COMPLETED_LIST=""
