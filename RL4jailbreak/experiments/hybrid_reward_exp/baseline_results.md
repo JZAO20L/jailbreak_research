@@ -17,18 +17,18 @@
 | creative_writing | **27.5%** | 71.6% | 0.9% | 1000 |
 | role_playing | **26.2%** | 73.0% | 0.8% | 1000 |
 
-## 对比：实验1原始prompt ASR
+## 对比：实验1原始prompt ASR（无重写，无训练）
 
-| Prompt | 实验1原始prompt ASR | 实验2重写prompt ASR | Δ |
-|--------|---------------------|---------------------|---|
+| Prompt | 实验1原始prompt ASR | 实验2 base model重写prompt ASR | Δ |
+|--------|---------------------|-------------------------------|---|
 | hypothetical_scenario | 30.8% | 26.2% | -4.6% |
 | creative_writing | 28.3% | 27.5% | -0.8% |
 | role_playing | 25.0% | 26.2% | +1.2% |
 
-## 对比：实验2训练后模型 ASR
+## 对比：实验2 base model vs 训练后（base model + LoRA）
 
-| 策略 + Judge维度 | 训练前(当前) | 训练后 | Δ |
-|------------------|-------------|--------|---|
+| 策略 + Judge维度 | Base model（无LoRA） | 训练后（base + LoRA） | Δ |
+|------------------|---------------------|----------------------|---|
 | creative_writing + stealthiness | 27.5% | 26.1% | -1.4% |
 | hypothetical_scenario + naturalness | 26.2% | 26.7% | +0.5% |
 | role_playing + role_playing | 26.2% | 27.3% | +1.1% |
