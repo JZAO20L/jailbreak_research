@@ -59,6 +59,7 @@ wandb/
 # Experiment summary files (generated, not source)
 experiments/jailbreak_prompt_exp/experiment_summary.json
 experiments/hybrid_reward_exp/results_summary.md
+experiments/hybrid_reward_exp/baseline_results.md
 
 # ========================================
 # Session / State Files
