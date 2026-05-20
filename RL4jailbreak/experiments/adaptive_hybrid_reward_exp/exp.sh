@@ -319,6 +319,47 @@ run_training() {
 }
 
 # =========================
+# Baseline Evaluation (untrained model + same rewrite prompt)
+# =========================
+run_baseline_evaluation() {
+    local attack_prompt=$1
+    local exp_key="baseline_base_${attack_prompt}_${JUDGE_PROMPT}"
+    local baseline_output="$OUTPUT_DIR/$exp_key"
+
+    # Check if already evaluated
+    if [ -f "$baseline_output/eval_results/summary.json" ]; then
+        log "[SKIP] Baseline evaluation: $exp_key (already exists)"
+        return 0
+    fi
+
+    log "============================================================"
+    log "Baseline Evaluation: Untrained model + same rewrite prompt"
+    log "Attack prompt: $attack_prompt, Judge: $JUDGE_PROMPT"
+    log "============================================================"
+
+    mkdir -p "$baseline_output/eval_results"
+
+    # Start Policy without LoRA (base model only)
+    start_policy_service
+
+    python "$BASE_DIR/scripts/eval.py" \
+        --eval_path "$EVAL_DATA" \
+        --base_model_path "$POLICY_MODEL" \
+        --target_model_path "$TARGET_MODEL" \
+        --guard_model_path "$GUARD_MODEL" \
+        --policy_port "$POLICY_PORT" \
+        --target_port "$TARGET_PORT" \
+        --guard_port "$GUARD_PORT" \
+        --output_root "$baseline_output/eval_results" \
+        --run_name "eval_${exp_key}"
+
+    # Stop Policy service
+    stop_policy_service
+
+    log "Baseline evaluation complete: $exp_key"
+}
+
+# =========================
 # Evaluation Function
 # =========================
 run_evaluation() {
@@ -414,6 +455,17 @@ mkdir -p "$OUTPUT_DIR"
 
 # Ensure Target + Guard running (shared across experiments)
 ensure_target_guard_running
+
+# =========================
+# Baseline Evaluation (before training models)
+# =========================
+log ""
+log "============================================================"
+log "Baseline Evaluation: Untrained model + same rewrite prompt"
+log "============================================================"
+for attack_prompt in "${ATTACK_PROMPTS[@]}"; do
+    run_baseline_evaluation "$attack_prompt"
+done
 
 # Run experiments
 EXP_IDX=0

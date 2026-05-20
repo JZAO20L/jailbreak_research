@@ -41,8 +41,8 @@ KNOWN_JUDGE_DIMENSIONS = [
     "role_playing",
 ]
 
-# Baseline directories (from experiment 2)
-KNOWN_BASELINES = ["baseline_original_prompt", "baseline_base_model"]
+# Baseline directory patterns
+KNOWN_BASELINE_PATTERNS = ["baseline_original_prompt", "baseline_base_model", "baseline_base_"]
 
 
 # =============================================================================
@@ -53,10 +53,34 @@ def parse_exp_name(exp_name: str) -> Dict[str, str]:
     """
     Parse experiment directory name.
 
-    Format: ema{beta}_{attack_prompt}_{judge_prompt}
+    Formats:
+    - ema{beta}_{attack_prompt}_{judge_prompt}
+    - baseline_base_{attack_prompt}_{judge_prompt}
     Example: ema0.9_hypothetical_scenario_stealthiness
+             baseline_base_role_playing_role_playing
     """
-    # Try to match known pattern
+    # Check for baseline pattern
+    if exp_name.startswith("baseline_base_"):
+        rest = exp_name[len("baseline_base_"):]
+        # Try to match attack prompt
+        for attack_prompt in KNOWN_ATTACK_PROMPTS:
+            attack_prefix = attack_prompt + "_"
+            if rest.startswith(attack_prefix):
+                judge_prompt = rest[len(attack_prefix):]
+                return {
+                    "ema_beta": "baseline",
+                    "attack_prompt": attack_prompt,
+                    "judge_prompt": judge_prompt,
+                    "window_size": "N/A",
+                }
+        return {
+            "ema_beta": "baseline",
+            "attack_prompt": rest,
+            "judge_prompt": "unknown",
+            "window_size": "N/A",
+        }
+
+    # Try to match known EMA pattern
     for ema_beta in KNOWN_EMA_BETAS:
         prefix = f"ema{ema_beta}_"
         if exp_name.startswith(prefix):
@@ -238,13 +262,24 @@ def format_text(results: Dict[str, Dict]) -> str:
     for group_key in sorted(groups.keys()):
         group_data = groups[group_key]
         lines.append(f"--- [{group_key}] ---")
+
+        # Show baseline first if available
+        baselines = [d for d in group_data if d["ema_beta"] == "baseline"]
+        trained = [d for d in group_data if d["ema_beta"] != "baseline"]
+
+        if baselines:
+            for b in baselines:
+                asr_str = f"{b['asr']:.1%}" if b["asr"] is not None else "N/A"
+                lines.append(f"{'baseline':<10} {'N/A':<10} {asr_str:<10} {'-':<10} {'-':<10} {'-':<10} {'-':<10}")
+            lines.append("-" * 70)
+
         lines.append(f"{'EMA Beta':<10} {'Window':<10} {'ASR':<10} {'λ min':<10} {'λ max':<10} {'λ mean':<10} {'λ final':<10}")
         lines.append("-" * 70)
 
-        # Sort by EMA beta
-        group_data.sort(key=lambda x: float(x["ema_beta"]) if x["ema_beta"] != "N/A" else 999)
+        # Sort trained by EMA beta
+        trained.sort(key=lambda x: float(x["ema_beta"]) if x["ema_beta"] not in ("N/A", "baseline") else 999)
 
-        for d in group_data:
+        for d in trained:
             asr_str = f"{d['asr']:.1%}" if d["asr"] is not None else "N/A"
             ls = d["lambda_stats"]
             if ls:
@@ -302,13 +337,23 @@ def format_markdown(results: Dict[str, Dict]) -> str:
 
     for group_key in sorted(groups.keys()):
         group_data = groups[group_key]
-        group_data.sort(key=lambda x: float(x["ema_beta"]) if x["ema_beta"] != "N/A" else 999)
+
+        # Show baseline first if available
+        baselines = [d for d in group_data if d["ema_beta"] == "baseline"]
+        trained = [d for d in group_data if d["ema_beta"] != "baseline"]
+        trained.sort(key=lambda x: float(x["ema_beta"]) if x["ema_beta"] not in ("N/A", "baseline") else 999)
 
         lines.append(f"\n### {group_key}\n")
         lines.append("| EMA Beta | Window Size | ASR | λ min | λ max | λ mean | λ final |")
         lines.append("|----------|-------------|-----|-------|-------|--------|---------|")
 
-        for d in group_data:
+        # Baseline first
+        for b in baselines:
+            asr_str = f"{b['asr']:.1%}" if b["asr"] is not None else "N/A"
+            lines.append(f"| baseline | N/A | {asr_str} | - | - | - | - |")
+
+        # Then trained models
+        for d in trained:
             asr_str = f"{d['asr']:.1%}" if d["asr"] is not None else "N/A"
             ls = d["lambda_stats"]
             if ls:
