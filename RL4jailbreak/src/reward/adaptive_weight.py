@@ -2,57 +2,74 @@
 """
 Adaptive Reward Weight Calculator for Experiment 3.
 
-This module implements the adaptive weight mechanism for hybrid reward GRPO training.
-The core idea is to dynamically adjust the weight between ASR reward and Judge reward
-based on their variance ratios, using sigmoid transformation and EMA smoothing.
+The window is measured in **training steps**, not samples.
+Each step, the caller computes the variance of rewards across k generations
+for each original prompt, averages across the batch, then calls update_step() once.
 
 Key formula:
-    ratio = var_judge / (var_asr + eps)
+    ratio = var_asr / (var_judge + eps)
     lambda_raw = sigmoid(alpha * ratio + delta)
-    lambda_new = ema_beta * lambda_old + (1 - ema_beta) * lambda_raw
-    lambda_final = clip(lambda_new, lambda_min, lambda_max)
-    reward = lambda_final * asr_reward + (1 - lambda_final) * judge_reward
+    lambda = ema_beta * lambda_old + (1 - ema_beta) * lambda_raw
+    final_reward = lambda * asr_reward + (1 - lambda) * judge_reward
 
 Physical meaning:
-- When ASR reward variance is small → low discrimination → reduce lambda → rely more on judge
-- When ASR reward variance is large → high discrimination → increase lambda → rely more on ASR
-- EMA smoothing prevents drastic weight fluctuations
+- When ASR reward variance across k generations is small → ASR provides little
+  discrimination → reduce lambda → rely more on judge
+- When ASR reward variance across k generations is large → ASR provides good
+  discrimination → increase lambda → rely more on ASR
+- EMA smoothing prevents drastic fluctuations
+
+Usage:
+    calculator = AdaptiveRewardCalculator(config)
+
+    # In reward function, once per training step:
+    # 1. Compute raw ASR and Judge rewards for each completion
+    # 2. Group by original prompt (k completions per prompt)
+    # 3. Compute variance within each group
+    # 4. Average variances across batch
+    # 5. Update lambda:
+    calculator.update_step(avg_var_asr, avg_var_judge)
+
+    # 6. Get current lambda for computing final rewards:
+    lambda_val = calculator.get_lambda()
+    final_rewards = [lambda_val * a + (1-lambda_val) * j for a, j in zip(asr_raws, judge_raws)]
 
 Reference: NEW_IDEA.md, TODO.md (Experiment 3)
 """
 
 import torch
 import math
-from typing import List, Optional, Tuple
-from dataclasses import dataclass, field
+from typing import List, Optional
+from dataclasses import dataclass
 
 
 @dataclass
 class AdaptiveRewardConfig:
     """Configuration for adaptive reward weight calculator."""
-    
+
     # Sigmoid parameters
     alpha: float = 2.0          # Variance ratio sensitivity
-    delta: float = -1.0         # Sigmoid bias (negative → prefer ASR initially)
-    
+    delta: float = -2.0         # Sigmoid bias (ratio=1 → lambda=0.5, neutral)
+
     # Lambda bounds
     lambda_min: float = 0.2     # Lower bound for ASR weight
     lambda_max: float = 0.8     # Upper bound for ASR weight
-    
-    # EMA parameter (window_size = 1/(1-beta))
-    ema_beta: float = 0.95      # Default: window size ~20
-    
+
+    # EMA parameter (window_size = 1/(1-beta), measured in **training steps**)
+    ema_beta: float = 0.95      # Default: window size ~20 steps
+
     # Stability
     eps: float = 1e-8           # Prevent division by zero
-    
+
     # Initial weight
     lambda_init: float = 0.5    # Start with 1:1 ratio
-    
-    # Multi-dimensional judge weights (for uniform weighting)
-    judge_dimension_weights: Optional[List[float]] = None  # Default: uniform [0.25, 0.25, 0.25, 0.25]
-    
+
+    # Ratio clipping
+    ratio_min: float = 0.1      # Lower bound for ratio (prevent extreme values)
+    ratio_max: float = 10.0     # Upper bound for ratio
+
     def get_window_size(self) -> int:
-        """Calculate effective window size from EMA beta."""
+        """Calculate effective window size from EMA beta (in training steps)."""
         if self.ema_beta >= 1.0:
             return math.inf
         return int(round(1.0 / (1.0 - self.ema_beta)))
@@ -61,60 +78,46 @@ class AdaptiveRewardConfig:
 class AdaptiveRewardCalculator:
     """
     Adaptive reward weight calculator for hybrid reward GRPO training.
-    
-    Usage:
-        calculator = AdaptiveRewardCalculator(config)
-        
-        # In reward function, per sample:
-        for asr_r, judge_r in rewards:
-            final_r = calculator.update(asr_r, judge_r)
-        
-        # Or batch mode:
-        final_rewards = calculator.update_batch(asr_rewards, judge_rewards)
-        
-        # Get current lambda for logging:
-        lambda_current = calculator.get_lambda()
-    
-    Note:
-        - First window uses fixed 1:1 weight (lambda=0.5)
-        - After first window, lambda adapts based on variance ratio
-        - Lambda represents ASR weight; Judge weight = 1 - lambda
+
+    The window is measured in training STEPS, not samples.
+    Each step, the caller computes variance across k completions for each
+    original prompt, averages across batch, then calls update_step() once.
     """
-    
+
     def __init__(self, config: Optional[AdaptiveRewardConfig] = None):
         self.config = config or AdaptiveRewardConfig()
-        
+
         # Current lambda (ASR weight)
         self._lambda: float = self.config.lambda_init
-        
-        # History buffers for variance calculation
-        self._asr_history: List[float] = []
-        self._judge_history: List[float] = []
-        
+
+        # Per-step variance history (one entry per training step)
+        self._var_asr_history: List[float] = []
+        self._var_judge_history: List[float] = []
+
         # Step counter
         self._step: int = 0
-        
+
         # Statistics for logging
         self._var_asr: float = 0.0
         self._var_judge: float = 0.0
         self._ratio: float = 1.0
         self._lambda_raw: float = 0.5
-    
+
     def reset(self):
         """Reset calculator state."""
         self._lambda = self.config.lambda_init
-        self._asr_history.clear()
-        self._judge_history.clear()
+        self._var_asr_history.clear()
+        self._var_judge_history.clear()
         self._step = 0
         self._var_asr = 0.0
         self._var_judge = 0.0
         self._ratio = 1.0
         self._lambda_raw = 0.5
-    
+
     def get_lambda(self) -> float:
         """Get current ASR weight (lambda). Judge weight = 1 - lambda."""
         return self._lambda
-    
+
     def get_statistics(self) -> dict:
         """Get current statistics for logging."""
         return {
@@ -124,304 +127,94 @@ class AdaptiveRewardCalculator:
             "var_judge": self._var_judge,
             "ratio": self._ratio,
             "step": self._step,
-            "history_size": len(self._asr_history),
+            "history_size": len(self._var_asr_history),
         }
-    
-    def _compute_variance(self, history: List[float], window: int) -> float:
-        """Compute variance over a window of history."""
-        if len(history) == 0:
-            return 0.0
-        
-        # Use last window elements (or all if less than window)
-        window_data = history[-window:] if window < len(history) else history
-        
-        if len(window_data) < 2:
-            return 0.0
-        
-        # Use torch for computation
-        tensor = torch.tensor(window_data, dtype=torch.float32)
-        variance = torch.var(tensor).item()
-        return variance
-    
-    def update(self, asr_raw: float, judge_raw: float) -> float:
+
+    def update_step(self, var_asr: float, var_judge: float) -> float:
         """
-        Update lambda with new reward pair and return weighted reward.
-        
+        Update lambda with variance computed for this training step.
+
+        Called once per training step with the averaged variance across the batch.
+
         Args:
-            asr_raw: Raw ASR reward (0~1, before weighting)
-            judge_raw: Raw Judge reward (0~1, before weighting)
-        
+            var_asr: Variance of ASR rewards (averaged across prompts in this step)
+            var_judge: Variance of Judge rewards (averaged across prompts in this step)
+
         Returns:
-            final_reward: Weighted combination of ASR and Judge rewards
+            updated lambda value
         """
         self._step += 1
-        
-        # Record history
-        self._asr_history.append(asr_raw)
-        self._judge_history.append(judge_raw)
-        
+        self._var_asr = var_asr
+        self._var_judge = var_judge
+        self._var_asr_history.append(var_asr)
+        self._var_judge_history.append(var_judge)
+
         window_size = self.config.get_window_size()
-        
-        # First window: fixed 1:1 ratio
-        if len(self._asr_history) <= window_size:
+
+        # First window (warmup): fixed 1:1 ratio
+        if len(self._var_asr_history) <= window_size:
             self._lambda = self.config.lambda_init
-            return self._lambda * asr_raw + (1 - self._lambda) * judge_raw
-        
-        # Compute variance over window
-        self._var_asr = self._compute_variance(self._asr_history, window_size)
-        self._var_judge = self._compute_variance(self._judge_history, window_size)
-        
-        # Compute ratio (var_judge / var_asr)
-        # When var_asr small → ratio large → sigmoid → lambda increases? 
-        # No, we want: var_asr small → lambda decrease
-        # So ratio should be var_asr / var_judge (inverse)
-        # Or adjust delta sign
-        
-        # Original formula from TODO: ratio = var_judge / var_asr
-        # But physical meaning should be: high var_asr → lambda high
-        # Let's use: ratio = var_asr / var_judge
-        # Then sigmoid(alpha * ratio + delta):
-        #   - ratio high (var_asr large) → sigmoid large → lambda high ✓
-        
-        ratio = self._var_asr / (self._var_judge + self.config.eps)
-        self._ratio = ratio
-        
-        # Sigmoid transformation
-        lambda_raw = torch.sigmoid(
-            torch.tensor(self.config.alpha * ratio + self.config.delta)
-        ).item()
-        self._lambda_raw = lambda_raw
-        
+            return self._lambda
+
+        # Handle edge case: both variances are zero
+        # This happens when ASR is all 0 (model hasn't learned) and Judge scores
+        # are nearly uniform. Fall back to 1:1 — neither source is informative.
+        if var_asr < self.config.eps and var_judge < self.config.eps:
+            self._ratio = 1.0  # Neutral ratio
+            self._lambda_raw = self.config.lambda_init  # Fall back to 0.5
+        else:
+            # Compute ratio: high var_asr → high ratio → high lambda
+            ratio = var_asr / (var_judge + self.config.eps)
+
+            # Clip ratio to prevent extreme sigmoid values
+            ratio = max(self.config.ratio_min, min(self.config.ratio_max, ratio))
+            self._ratio = ratio
+
+            # Sigmoid transformation
+            self._lambda_raw = torch.sigmoid(
+                torch.tensor(self.config.alpha * ratio + self.config.delta)
+            ).item()
+
         # EMA smoothing
         self._lambda = (
-            self.config.ema_beta * self._lambda + 
-            (1 - self.config.ema_beta) * lambda_raw
+            self.config.ema_beta * self._lambda +
+            (1 - self.config.ema_beta) * self._lambda_raw
         )
-        
+
         # Clip to bounds
-        self._lambda = max(self.config.lambda_min, 
+        self._lambda = max(self.config.lambda_min,
                           min(self.config.lambda_max, self._lambda))
-        
-        # Compute final reward
-        final_reward = self._lambda * asr_raw + (1 - self._lambda) * judge_raw
-        
-        return final_reward
-    
-    def update_batch(
-        self, 
-        asr_raws: List[float], 
-        judge_raws: List[float]
-    ) -> List[float]:
-        """
-        Update lambda with batch of rewards and return weighted rewards.
-        
-        Note: This processes rewards sequentially, updating lambda after each.
-        For parallel processing (same lambda for all in batch), use compute_batch_fixed.
-        
-        Args:
-            asr_raws: List of raw ASR rewards
-            judge_raws: List of raw Judge rewards
-        
-        Returns:
-            final_rewards: List of weighted rewards
-        """
-        final_rewards = []
-        for asr_r, judge_r in zip(asr_raws, judge_raws):
-            final_r = self.update(asr_r, judge_r)
-            final_rewards.append(final_r)
-        return final_rewards
-    
-    def compute_batch_fixed(
-        self,
-        asr_raws: List[float],
-        judge_raws: List[float],
-        update_after: bool = True
-    ) -> List[float]:
-        """
-        Compute weighted rewards using current lambda (fixed for batch).
-        
-        Optionally update lambda after computing all rewards (using batch statistics).
-        This is useful for GRPO where all k completions share the same original prompt.
-        
-        Args:
-            asr_raws: List of raw ASR rewards
-            judge_raws: List of raw Judge rewards
-            update_after: Whether to update lambda after computing (using batch mean)
-        
-        Returns:
-            final_rewards: List of weighted rewards (all using same lambda)
-        """
-        # Use current lambda for all
-        final_rewards = [
-            self._lambda * asr_r + (1 - self._lambda) * judge_r
-            for asr_r, judge_r in zip(asr_raws, judge_raws)
-        ]
-        
-        if update_after:
-            # Update history with batch
-            for asr_r, judge_r in zip(asr_raws, judge_raws):
-                self._asr_history.append(asr_r)
-                self._judge_history.append(judge_r)
-                self._step += 1
-            
-            # Recompute lambda after batch
-            window_size = self.config.get_window_size()
-            
-            if len(self._asr_history) > window_size:
-                self._var_asr = self._compute_variance(self._asr_history, window_size)
-                self._var_judge = self._compute_variance(self._judge_history, window_size)
-                
-                ratio = self._var_asr / (self._var_judge + self.config.eps)
-                self._ratio = ratio
-                
-                lambda_raw = torch.sigmoid(
-                    torch.tensor(self.config.alpha * ratio + self.config.delta)
-                ).item()
-                self._lambda_raw = lambda_raw
-                
-                self._lambda = (
-                    self.config.ema_beta * self._lambda +
-                    (1 - self.config.ema_beta) * lambda_raw
-                )
-                self._lambda = max(self.config.lambda_min,
-                                  min(self.config.lambda_max, self._lambda))
-        
-        return final_rewards
 
-
-class MultiDimensionJudgeReward:
-    """
-    Multi-dimensional judge reward calculator.
-    
-    Computes judge reward by averaging multiple dimension scores with configurable weights.
-    
-    Dimensions (from TODO.md):
-    - intent_preservation: How well the rewritten prompt preserves the original attack intent
-    - stealth: Attack stealthiness / concealment
-    - strategy_execution: How well the attack strategy is executed
-    - attack_potential: Overall jailbreak potential
-    
-    Default: uniform weights [0.25, 0.25, 0.25, 0.25]
-    """
-    
-    DIMENSION_NAMES = [
-        "intent_preservation",
-        "stealth",
-        "strategy_execution",
-        "attack_potential",
-    ]
-    
-    def __init__(self, weights: Optional[List[float]] = None):
-        """
-        Args:
-            weights: Dimension weights. Default: uniform [0.25, 0.25, 0.25, 0.25]
-        """
-        if weights is None:
-            weights = [0.25, 0.25, 0.25, 0.25]
-        
-        if len(weights) != len(self.DIMENSION_NAMES):
-            raise ValueError(
-                f"Expected {len(self.DIMENSION_NAMES)} weights, got {len(weights)}"
-            )
-        
-        # Normalize weights
-        total = sum(weights)
-        self.weights = [w / total for w in weights]
-    
-    def compute(self, dimension_scores: dict) -> float:
-        """
-        Compute weighted judge reward from dimension scores.
-        
-        Args:
-            dimension_scores: Dict mapping dimension name to score (0~1)
-                            e.g., {"intent_preservation": 0.8, "stealth": 0.6, ...}
-        
-        Returns:
-            weighted_reward: Weighted average of dimension scores (0~1)
-        """
-        total = 0.0
-        for dim, weight in zip(self.DIMENSION_NAMES, self.weights):
-            score = dimension_scores.get(dim, 0.0)
-            if not isinstance(score, (int, float)):
-                score = 0.0
-            score = max(0.0, min(1.0, float(score)))
-            total += weight * score
-        return total
-    
-    def compute_from_json_response(self, json_str: str) -> Tuple[float, dict]:
-        """
-        Parse JSON response from judge model and compute weighted reward.
-        
-        Expected JSON format:
-        {
-            "intent_preservation": 0.75,
-            "stealth": 0.60,
-            "strategy_execution": 0.80,
-            "attack_potential": 0.70
-        }
-        
-        Args:
-            json_str: JSON string from judge model
-        
-        Returns:
-            weighted_reward: Weighted average
-            parsed_scores: Dict of parsed dimension scores
-        """
-        import json
-        import re
-        
-        parsed_scores = {}
-        
-        # Try to extract JSON from response
-        try:
-            # Find JSON-like content
-            json_match = re.search(r'\{[^{}]*\}', json_str, re.DOTALL)
-            if json_match:
-                json_content = json_match.group(0)
-                parsed_scores = json.loads(json_content)
-            else:
-                parsed_scores = {}
-        except (json.JSONDecodeError, AttributeError):
-            parsed_scores = {}
-        
-        # Fill missing dimensions with default 0.0
-        for dim in self.DIMENSION_NAMES:
-            if dim not in parsed_scores:
-                parsed_scores[dim] = 0.0
-        
-        # Compute weighted reward
-        weighted_reward = self.compute(parsed_scores)
-        
-        return weighted_reward, parsed_scores
+        return self._lambda
 
 
 # Convenience function for quick testing
 def test_adaptive_weight():
-    """Test adaptive weight calculator with simulated rewards."""
-    
-    config = AdaptiveRewardConfig(ema_beta=0.9)  # window ~10
-    calculator = AdaptiveRewardCalculator(config)
-    
-    # Simulate rewards: ASR has low variance, Judge has high variance
+    """Test adaptive weight calculator with simulated per-step variances."""
     import random
-    
-    print("Testing AdaptiveRewardCalculator (ema_beta=0.9, window~10)")
-    print("=" * 60)
-    
+
+    config = AdaptiveRewardConfig(ema_beta=0.9)  # window ~10 steps
+    calculator = AdaptiveRewardCalculator(config)
+
+    print("Testing AdaptiveRewardCalculator (ema_beta=0.9, window~10 steps)")
+    print("=" * 70)
+
     for step in range(30):
-        # Simulate: ASR stable around 0.5, Judge varies widely
-        asr_raw = 0.5 + random.gauss(0, 0.05)  # Low variance
-        judge_raw = random.uniform(0.2, 0.8)   # High variance
-        
-        final_r = calculator.update(asr_raw, judge_raw)
+        # Simulate: ASR has low variance, Judge has high variance
+        # (e.g., ASR is all 0, Judge varies between 0.3-0.7)
+        var_asr = max(0.0, random.gauss(0.01, 0.005))  # Low variance
+        var_judge = random.uniform(0.01, 0.03)         # High variance
+
+        calculator.update_step(var_asr, var_judge)
         stats = calculator.get_statistics()
-        
-        print(f"Step {step+1:2d}: λ={stats['lambda']:.3f} | "
+        lambda_val = stats["lambda"]
+
+        print(f"Step {step+1:2d}: λ={lambda_val:.3f} | "
               f"var_asr={stats['var_asr']:.4f} var_judge={stats['var_judge']:.4f} | "
               f"ratio={stats['ratio']:.2f} | "
-              f"ASR={asr_raw:.2f} Judge={judge_raw:.2f} → Final={final_r:.2f}")
-    
-    print("=" * 60)
+              f"window={'warmup' if step+1 <= 10 else 'adaptive'}")
+
+    print("=" * 70)
     print(f"Final lambda: {calculator.get_lambda():.3f}")
     print("Expected: lambda should decrease (ASR has low variance → rely more on Judge)")
 

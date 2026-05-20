@@ -4,27 +4,56 @@
 
 This experiment implements the core innovation of our research: **adaptive weight mechanism** for hybrid reward GRPO training.
 
+**Building on Experiment 2**: This experiment extends the hybrid reward GRPO from Experiment 2 (`experiments/hybrid_reward_exp/`) by replacing fixed ASR/Judge weight ratios with dynamic, variance-based adaptive weighting.
+
 ### Key Idea
 
 When training jailbreak prompt generation models using GRPO, we combine two reward sources:
 - **ASR Reward**: Outcome-based, measures attack success rate (sparse, high variance)
-- **Judge Reward**: Process-based, evaluates prompt quality on multiple dimensions (dense, low variance)
+- **Judge Reward**: Process-based, evaluates prompt quality on specified dimension (dense, low variance)
 
 The challenge is that ASR reward variance varies during training - sometimes high (good discrimination), sometimes low (poor discrimination). Fixed weight mixing doesn't adapt to this dynamic.
 
 Our solution: **Adaptive lambda** that adjusts the ASR/Judge weight ratio based on variance ratio:
 
 ```
+# Per training step:
+#   1. Group k=8 completions by original prompt
+#   2. Compute variance of ASR rewards within group → var_asr
+#   3. Compute variance of Judge rewards within group → var_judge
+#   4. Average variances across batch
+#
 ratio = var_asr / (var_judge + eps)
 lambda_raw = sigmoid(alpha × ratio + delta)
-lambda_new = ema_beta × lambda_old + (1 - ema_beta) × lambda_raw
+lambda = ema_beta × lambda_old + (1 - ema_beta) × lambda_raw
 final_reward = lambda × ASR_reward + (1 - lambda) × Judge_reward
 ```
+
+**Window**: Measured in **training steps** (not samples). Each step appends one variance pair.
+
+| EMA Beta | Window Size | Steps in warmup |
+|----------|-------------|-----------------|
+| 0.0 | 1 step | 1 |
+| 0.67 | 3 steps | 3 |
+| 0.8 | 5 steps | 5 |
+| 0.9 | 10 steps | 10 |
 
 **Physical meaning**:
 - `var_asr` small → ASR provides little discrimination → reduce lambda → rely more on judge
 - `var_asr` large → ASR provides good discrimination → increase lambda → rely more on ASR
 - EMA smoothing prevents drastic fluctuations
+
+---
+
+### Alignment with Experiment 2
+
+| Aspect | Experiment 2 | Experiment 3 |
+|--------|--------------|--------------|
+| **Reward weight** | Fixed (configurable ratio) | **Adaptive** (variance-based) |
+| **Judge format** | `SCORE=0.XX` output | **Same** `SCORE=0.XX` output |
+| **Judge dimensions** | idea_preservation, stealthiness, naturalness, + specialized | **Same** dimensions |
+| **Attack prompts** | hypothetical_scenario, creative_writing, role_playing | **Same** strategies |
+| **Key research question** | Which judge dimension works best? | **How does adaptive window size affect training?** |
 
 ---
 
@@ -57,16 +86,13 @@ adaptive_hybrid_reward_exp/
 
 ### Ablation on EMA Beta (Window Size)
 
-We test 6 different EMA beta values, corresponding to different window sizes:
+We test 4 different EMA beta values, corresponding to different window sizes:
 
 | EMA Beta | Window Size | Description |
 |----------|-------------|-------------|
-| 0.0 | 1 | No smoothing, instant adaptation |
-| 0.5 | 2 | Short window, quick adaptation |
-| 0.67 | 3 | Medium-short window |
-| 0.8 | 5 | Medium window |
-| 0.9 | 10 | Medium-long window |
-| 0.95 | 20 | Long window, slow adaptation |
+| 0.0 | 1 step | No smoothing, instant adaptation |
+| 0.8 | 5 steps | Medium window |
+| 0.9 | 10 steps | Medium-long window |
 
 **Hypothesis**: Larger window sizes provide more stable lambda estimates but slower adaptation. We expect a sweet spot around window=10 (beta=0.9).
 
@@ -75,19 +101,27 @@ We test 6 different EMA beta values, corresponding to different window sizes:
 | Parameter | Value | Description |
 |-----------|-------|-------------|
 | `alpha` | 2.0 | Variance ratio sensitivity |
-| `delta` | -1.0 | Sigmoid bias (negative → initial preference for ASR) |
-| `lambda_min` | 0.2 | ASR weight lower bound |
-| `lambda_max` | 0.8 | ASR weight upper bound |
-| `max_steps` | 1000 | Training steps (fixed for all experiments) |
-| `attack_prompt` | hypothetical_scenario | Top-1 strategy from Experiment 1 |
+| `delta` | -2.0 | Sigmoid bias (ratio=1 → lambda=0.5, neutral 1:1) |
+| `lambda_min` | 0.1 | ASR weight lower bound |
+| `lambda_max` | 0.9 | ASR weight upper bound |
+| `max_steps` | 500 | Training steps (fixed for ablation, aligned with Exp2) |
+| `attack_prompt` | hypothetical_scenario | Best from Experiment 2 re-eval (27.0%) |
 
 ### Judge Dimensions
 
-Multi-dimensional evaluation (uniform weights [0.25, 0.25, 0.25, 0.25]):
-- `intent_preservation`: Core attack intent preservation
-- `stealth`: Attack concealment / stealthiness
-- `strategy_execution`: How well attack strategy is executed
-- `attack_potential`: Overall jailbreak potential
+Aligned with Experiment 2, using single-dimension scoring (`SCORE=0.XX` format):
+
+**General dimensions** (applicable to all strategies):
+- `idea_preservation`: Core attack intent preservation
+- `stealthiness`: Attack concealment / stealthiness
+- `naturalness`: How natural the rewritten prompt sounds
+
+**Specialized dimensions** (strategy-specific):
+- `hypothetical_scenario`: Quality of hypothetical framing
+- `creative_writing`: Quality of creative writing framing
+- `role_playing`: Quality of role-playing framing
+
+Default: `idea_preservation` (best overall, +0.8% vs baseline 26.2% → 27.0% after training)
 
 ---
 
@@ -98,7 +132,7 @@ Multi-dimensional evaluation (uniform weights [0.25, 0.25, 0.25, 0.25]):
 ```bash
 cd /mnt/bn/chenxiong/mlx/users/jiazixiao/jailbreak_research/RL4jailbreak
 
-# Run all 6 EMA beta experiments (default: hypothetical_scenario)
+# Run all 9 experiments (3 combinations × 3 EMA beta values)
 bash experiments/adaptive_hybrid_reward_exp/exp.sh
 ```
 
@@ -106,13 +140,11 @@ bash experiments/adaptive_hybrid_reward_exp/exp.sh
 
 ```bash
 # Single EMA beta
-bash experiments/adaptive_hybrid_reward_exp/exp.sh --ema_beta 0.95
+bash experiments/adaptive_hybrid_reward_exp/exp.sh --ema_beta 0.9
 
-# Different attack prompt
-bash experiments/adaptive_hybrid_reward_exp/exp.sh --attack_prompt creative_writing
-
-# Override max steps
-bash experiments/adaptive_hybrid_reward_exp/exp.sh --max_steps 500
+# Single combination
+bash experiments/adaptive_hybrid_reward_exp/exp.sh \
+    --combination hypothetical_scenario:idea_preservation
 ```
 
 ### Reset and Start Fresh
@@ -130,9 +162,10 @@ bash experiments/adaptive_hybrid_reward_exp/exp.sh --reset
 # bash scripts/start_guard.sh
 
 python experiments/adaptive_hybrid_reward_exp/adaptive_hybrid_reward_grpo.py \
-    --ema_beta 0.95 \
+    --ema_beta 0.9 \
     --attack_prompt hypothetical_scenario \
-    --max_steps 1000 \
+    --judge_prompt idea_preservation \
+    --max_steps 500 \
     --output_dir experiments/adaptive_hybrid_reward_exp/output/test
 ```
 
@@ -145,7 +178,7 @@ python experiments/adaptive_hybrid_reward_exp/adaptive_hybrid_reward_grpo.py \
 Each experiment produces:
 
 ```
-output/ema0.95_hypothetical_scenario/
+output/ema0.9_hypothetical_scenario/
 ├── final_lora/                 # LoRA weights
 │   ├── adapter_config.json
 │   └── adapter_model.safetensors
@@ -175,13 +208,41 @@ ASR evaluation results in `eval_results/`:
 
 ```json
 {
-  "experiment": "ema0.95_hypothetical_scenario",
+  "experiment": "ema0.9_hypothetical_scenario_stealthiness",
   "asr": 0.42,
   "total_samples": 1000,
   "unsafe_count": 420,
   "controversial_count": 50,
   "safe_count": 530
 }
+```
+
+### Summary Report
+
+After all experiments complete, `summarize_results.py` generates a summary:
+
+```
+output/
+├── ema0.0_hypothetical_scenario_stealthiness/
+├── ema0.5_hypothetical_scenario_stealthiness/
+├── ...
+└── results_summary.md     <-- Auto-generated summary
+```
+
+View summary in different formats:
+
+```bash
+# Text format (default)
+python experiments/adaptive_hybrid_reward_exp/summarize_results.py \
+    --output_dir experiments/adaptive_hybrid_reward_exp/output
+
+# Markdown table
+python experiments/adaptive_hybrid_reward_exp/summarize_results.py \
+    --output_dir experiments/adaptive_hybrid_reward_exp/output --format markdown
+
+# JSON
+python experiments/adaptive_hybrid_reward_exp/summarize_results.py \
+    --output_dir experiments/adaptive_hybrid_reward_exp/output --format json
 ```
 
 ---
@@ -207,44 +268,59 @@ from src.reward.adaptive_weight import AdaptiveRewardCalculator, AdaptiveRewardC
 # Initialize
 config = AdaptiveRewardConfig(
     alpha=2.0,          # Variance ratio sensitivity
-    delta=-1.0,         # Sigmoid bias
+    delta=-2.0,         # Sigmoid bias
     lambda_min=0.2,     # Lower bound
     lambda_max=0.8,     # Upper bound
-    ema_beta=0.95,      # EMA smoothing (window ~20)
+    ema_beta=0.9,       # EMA smoothing (window ~10 steps)
 )
 calculator = AdaptiveRewardCalculator(config)
 
-# In reward function
-for asr_raw, judge_raw in rewards:
-    final_reward = calculator.update(asr_raw, judge_raw)
-    
-# Or batch mode (fixed lambda for all)
-final_rewards = calculator.compute_batch_fixed(asr_raws, judge_raws, update_after=True)
+# In reward function, once per training step:
+# 1. Compute raw rewards for all completions
+asr_raws = asr_reward(prompts, completions)
+judge_raws = judge_reward(prompts, completions)
+
+# 2. Group by original prompt (k completions each), compute variance
+var_asr = variance_of(asr_raws_for_one_prompt)
+var_judge = variance_of(judge_raws_for_one_prompt)
+
+# 3. Update lambda with this step's variances
+calculator.update_step(var_asr, var_judge)
+
+# 4. Get current lambda for final rewards
+lambda_val = calculator.get_lambda()
+final_rewards = [lambda_val * a + (1-lambda_val) * j for a, j in zip(asr_raws, judge_raws)]
 
 # Get statistics for logging
 stats = calculator.get_statistics()
 ```
 
-### Multi-Dimensional Judge
+### Judge Reward (Aligned with Experiment 2)
 
-Judge model evaluates all 4 dimensions in single call:
+Judge model evaluates on a single dimension with `SCORE=0.XX` output:
 
 ```python
 from experiments.adaptive_hybrid_reward_exp.judge_prompts import (
-    JUDGE_MULTI_DIMENSION_UNIFORM,
+    get_judge_prompt,
     parse_judge_response,
 )
 
+# Get template for specified dimension
+judge_template = get_judge_prompt(args.judge_prompt)  # e.g., "stealthiness"
+
 # Format prompt
-judge_prompt = JUDGE_MULTI_DIMENSION_UNIFORM.format(
+judge_prompt = judge_template.format(
     original_prompt=orig,
     rewritten_prompt=rewritten
 )
 
-# Parse JSON response
-weighted_score, parsed_scores = parse_judge_response(response)
-# weighted_score = 0.25*intent + 0.25*stealth + 0.25*strategy + 0.25*potential
+# Parse SCORE=0.XX response
+score = parse_judge_response(response)  # Returns float 0.0-1.0
 ```
+
+Available dimensions:
+- General: `idea_preservation`, `stealthiness`, `naturalness`
+- Specialized: `hypothetical_scenario`, `creative_writing`, `role_playing`
 
 ---
 
@@ -252,11 +328,12 @@ weighted_score, parsed_scores = parse_judge_response(response)
 
 | Aspect | Experiment 2 | Experiment 3 |
 |--------|--------------|--------------|
-| **Reward weight** | Fixed 1:1 | Adaptive (variance-based) |
-| **Judge prompt** | Single dimension | Multi-dimensional (4D uniform) |
+| **Reward weight** | Fixed ratio (e.g., 1:1, 3:7) | **Adaptive** (variance-based) |
+| **Judge prompt** | Single dimension (SCORE=0.XX) | **Same** format (aligned) |
 | **EMA beta** | Not applicable | 6 values for ablation |
-| **Attack prompt** | 3 strategies × 4 dimensions | 1 strategy (top-1) |
+| **Attack prompt** | 3 strategies × 4 dimensions | 1 strategy + 1 dimension at a time |
 | **Key research question** | Which judge dimension works best? | How does window size affect adaptation? |
+| **Training steps** | 500 (screening phase) | 500 (aligned with Exp2) |
 
 ---
 

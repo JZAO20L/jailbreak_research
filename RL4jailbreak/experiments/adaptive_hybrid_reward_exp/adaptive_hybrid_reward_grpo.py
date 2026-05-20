@@ -13,16 +13,14 @@ Key components:
 3. ASR Reward: Standard attack success rate via Target+Guard
 
 Usage:
-    # Default EMA beta=0.95 (window~20)
-    python adaptive_hybrid_reward_grpo.py --ema_beta 0.95
-    
+    # Default EMA beta=0.9 (window~10)
+    python adaptive_hybrid_reward_grpo.py --ema_beta 0.9
+
     # Different EMA beta values for ablation
     python adaptive_hybrid_reward_grpo.py --ema_beta 0.0   # window=1
-    python adaptive_hybrid_reward_grpo.py --ema_beta 0.5   # window=2
     python adaptive_hybrid_reward_grpo.py --ema_beta 0.67  # window=3
     python adaptive_hybrid_reward_grpo.py --ema_beta 0.8   # window=5
     python adaptive_hybrid_reward_grpo.py --ema_beta 0.9   # window=10
-    python adaptive_hybrid_reward_grpo.py --ema_beta 0.95  # window=20
 
 Reference: TODO.md (Experiment 3), NEW_IDEA.md
 """
@@ -54,10 +52,9 @@ from src.utils import extract_label_categories_refusal
 from src.prompts import REWRITE_PROMPT, GUARD_PROMPT
 from src.reward.adaptive_weight import AdaptiveRewardCalculator, AdaptiveRewardConfig
 from experiments.adaptive_hybrid_reward_exp.judge_prompts import (
-    JUDGE_MULTI_DIMENSION_UNIFORM,
-    DIMENSION_NAMES,
+    JUDGE_PROMPTS,
+    get_judge_prompt,
     parse_judge_response,
-    compute_weighted_score,
 )
 
 
@@ -66,9 +63,9 @@ from experiments.adaptive_hybrid_reward_exp.judge_prompts import (
 # =============================================================================
 DEFAULT_ARGS = {
     # Model paths
-    "policy_model": "/home/tiger/models/Qwen3-4B",
-    "target_model": "/home/tiger/models/Qwen3-4B",
-    "guard_model": "/home/tiger/models/Qwen3Guard-Gen-4B",
+    "policy_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
+    "target_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
+    "guard_model": "/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B",
     
     # LoRA config
     "lora_r": 16,
@@ -78,7 +75,7 @@ DEFAULT_ARGS = {
     
     # Training hyperparameters (from TODO.md)
     "learning_rate": 1e-5,
-    "max_steps": 1000,           # Fixed 1000 steps for all experiments
+    "max_steps": 500,            # Fixed 500 steps for ablation (aligned with Exp2)
     "beta": 0.05,                # KL penalty
     "num_generations": 8,        # Group size for GRPO
     "per_device_train_batch_size": 4,
@@ -90,9 +87,9 @@ DEFAULT_ARGS = {
     "vllm_gpu_memory_utilization": 0.3,
     
     # Adaptive reward config (from TODO.md)
-    "ema_beta": 0.95,            # Default: window~20
+    "ema_beta": 0.9,             # Default: window~10
     "alpha": 2.0,                # Variance ratio sensitivity
-    "delta": -1.0,               # Sigmoid bias
+    "delta": -2.0,               # Sigmoid bias (ratio=1 → lambda=0.5, neutral)
     "lambda_min": 0.2,           # ASR weight lower bound
     "lambda_max": 0.8,           # ASR weight upper bound
     
@@ -102,8 +99,11 @@ DEFAULT_ARGS = {
     "target_max_tokens": 512,
     
     # Jailbreak prompt strategy (from TODO.md: use top-3 prompts)
-    "attack_prompt": "hypothetical_scenario",  # Default top-1
-    
+    "attack_prompt": "hypothetical_scenario",  # Exp2 re-eval best (27.0%)
+
+    # Judge prompt dimension (aligned with Experiment 2 re-evaluation)
+    "judge_prompt": "idea_preservation",       # Best overall (+0.8% vs baseline)
+
     # Output
     "output_dir": "experiments/adaptive_hybrid_reward_exp/output",
     "run_name": None,
@@ -124,7 +124,7 @@ def parse_args():
     # EMA beta (key parameter for ablation)
     parser.add_argument("--ema_beta", type=float, default=DEFAULT_ARGS["ema_beta"],
                         help="EMA smoothing parameter. Window size = 1/(1-beta). "
-                             "Values: 0, 0.5, 0.67, 0.8, 0.9, 0.95 → windows: 1,2,3,5,10,20")
+                             "Values: 0, 0.67, 0.8, 0.9 → windows: 1,3,5,10")
     
     # Adaptive reward parameters
     parser.add_argument("--alpha", type=float, default=DEFAULT_ARGS["alpha"],
@@ -162,7 +162,12 @@ def parse_args():
     # Attack prompt strategy
     parser.add_argument("--attack_prompt", type=str, default=DEFAULT_ARGS["attack_prompt"],
                         help="Jailbreak prompt strategy from Experiment 1 top-3")
-    
+
+    # Judge prompt dimension (aligned with Experiment 2)
+    parser.add_argument("--judge_prompt", type=str, default=DEFAULT_ARGS["judge_prompt"],
+                        help="Judge prompt dimension. Options: idea_preservation, stealthiness, "
+                             "naturalness, hypothetical_scenario, creative_writing, role_playing")
+
     # Data
     parser.add_argument("--train_data", type=str,
                         default=os.path.join(BASE_DIR, "../data/dataset/processed/10k/train.jsonl"))
@@ -185,7 +190,7 @@ def parse_args():
 args = parse_args()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["SWANLAB_PROJECT"] = "JPG_adaptive_hybrid_reward_exp"
 
 LORA_DIR = os.path.join(args.output_dir, "final_lora")
@@ -287,38 +292,41 @@ def load_train_dataset(path: str, attack_prompt: str) -> Dataset:
 # =============================================================================
 # Reward Functions
 # =============================================================================
-def judge_reward_multi_dim(
+def judge_reward(
     prompts: List[str],
     completions: List[str],
     original_prompts: Optional[List[str]] = None,
     **kwargs
 ) -> List[float]:
     """
-    Multi-dimensional Judge Reward.
-    
-    Evaluates each rewritten prompt on 4 dimensions:
-    - intent_preservation
-    - stealth
-    - strategy_execution
-    - attack_potential
-    
+    Judge Reward: Evaluates rewritten prompt quality on specified dimension.
+
+    Aligned with Experiment 2 format: uses SCORE=0.XX output.
+
+    Available dimensions (from judge_prompts.py):
+    - General: idea_preservation, stealthiness, naturalness
+    - Specialized: hypothetical_scenario, creative_writing, role_playing
+
     Returns raw judge reward (0~1, before adaptive weighting).
     """
-    
+
     # Get original prompts for comparison
     if original_prompts is None:
         original_prompts = prompts
-    
+
+    # Get judge template for specified dimension
+    judge_template = get_judge_prompt(args.judge_prompt)
+
     judge_prompts_batch = []
     for orig, rewritten in zip(original_prompts, completions):
         rewritten = (rewritten or "").strip()
         judge_prompts_batch.append(
-            JUDGE_MULTI_DIMENSION_UNIFORM.format(
+            judge_template.format(
                 original_prompt=orig,
                 rewritten_prompt=rewritten
             )
         )
-    
+
     # Batch call judge (using target as judge model)
     judge_responses = TARGET_CLIENT.llm_batch_call(
         prompts=judge_prompts_batch,
@@ -327,17 +335,17 @@ def judge_reward_multi_dim(
         max_workers=16,
         return_exceptions=True,
     )
-    
+
     # Parse responses and compute raw scores
     raw_scores = []
     for resp in judge_responses:
         if resp is None or isinstance(resp, Exception):
             raw_scores.append(0.1)  # Fallback low score
             continue
-        
-        weighted_score, parsed = parse_judge_response(str(resp))
-        raw_scores.append(weighted_score)
-    
+
+        score = parse_judge_response(str(resp))
+        raw_scores.append(score)
+
     return raw_scores
 
 
@@ -409,42 +417,76 @@ def adaptive_hybrid_reward(
 ) -> List[float]:
     """
     Adaptive Hybrid Reward: Combines ASR and Judge rewards with adaptive weighting.
-    
-    Key mechanism:
-    1. Compute raw ASR reward and raw Judge reward
-    2. Update lambda based on variance ratio
-    3. Final reward = lambda * ASR + (1-lambda) * Judge
-    
-    This function is called per batch in GRPO training.
+
+    Window is measured in **training steps**, not samples.
+    Each step:
+    1. Compute raw ASR and Judge rewards for each completion
+    2. Group by original prompt (k completions per prompt)
+    3. Compute variance of rewards within each group (across k completions)
+    4. Average variances across batch → one (var_asr, var_judge) pair per step
+    5. Update lambda based on this step's variance ratio
+    6. Final reward = lambda * ASR + (1-lambda) * Judge
     """
-    
-    # Get raw rewards
+
+    # Step 1: Get raw rewards for each completion
     asr_raws = asr_reward(prompts, completions, **kwargs)
-    judge_raws = judge_reward_multi_dim(prompts, completions, original_prompts, **kwargs)
-    
-    # Use adaptive calculator with fixed lambda for batch
-    # (all k completions from same original prompt share same lambda)
-    final_rewards = adaptive_calculator.compute_batch_fixed(
-        asr_raws, judge_raws, update_after=True
-    )
-    
+    judge_raws = judge_reward(prompts, completions, original_prompts, **kwargs)
+
+    # Step 2-3: Group by original prompt and compute per-group variance
+    # In GRPO, prompts list contains repeated prompts (each repeated k times)
+    # Completions are in the same order
+    k = args.num_generations  # 8
+
+    step_var_asr_list: List[float] = []
+    step_var_judge_list: List[float] = []
+
+    for i in range(0, len(completions), k):
+        group_asr = asr_raws[i:i+k]
+        group_judge = judge_raws[i:i+k]
+
+        if len(group_asr) >= 2:
+            var_asr = float(torch.var(torch.tensor(group_asr, dtype=torch.float32)).item())
+            var_judge = float(torch.var(torch.tensor(group_judge, dtype=torch.float32)).item())
+            step_var_asr_list.append(var_asr)
+            step_var_judge_list.append(var_judge)
+        else:
+            step_var_asr_list.append(0.0)
+            step_var_judge_list.append(0.0)
+
+    # Step 4: Average variance across prompts in this batch
+    n_prompts = len(step_var_asr_list)
+    avg_var_asr = sum(step_var_asr_list) / n_prompts if n_prompts > 0 else 0.0
+    avg_var_judge = sum(step_var_judge_list) / n_prompts if n_prompts > 0 else 0.0
+
+    # Step 5: Update lambda with this step's variances
+    adaptive_calculator.update_step(avg_var_asr, avg_var_judge)
+
+    # Step 6: Compute final rewards using current lambda
+    lambda_val = adaptive_calculator.get_lambda()
+    final_rewards = [
+        lambda_val * a + (1 - lambda_val) * j
+        for a, j in zip(asr_raws, judge_raws)
+    ]
+
     # Log lambda statistics
     stats = adaptive_calculator.get_statistics()
     lambda_history.append({
-        "step": len(lambda_history) + 1,
+        "step": stats["step"],
         "lambda": stats["lambda"],
         "var_asr": stats["var_asr"],
         "var_judge": stats["var_judge"],
         "ratio": stats["ratio"],
-        "batch_size": len(prompts),
+        "batch_size": n_prompts,
     })
-    
+
     # Periodic logging
-    if len(lambda_history) % 10 == 0:
-        logger.info(f"[Adaptive] λ={stats['lambda']:.3f} | "
+    if stats["step"] % 10 == 0:
+        window_size = adaptive_config.get_window_size()
+        logger.info(f"[Adaptive] step={stats['step']} λ={stats['lambda']:.3f} | "
                     f"var_asr={stats['var_asr']:.4f} var_judge={stats['var_judge']:.4f} | "
-                    f"ratio={stats['ratio']:.2f}")
-    
+                    f"ratio={stats['ratio']:.2f} | "
+                    f"window={'warmup' if stats['step'] <= window_size else 'adaptive'}")
+
     return final_rewards
 
 
@@ -458,6 +500,7 @@ def main():
     logger.info(f"Output: {args.output_dir}")
     logger.info(f"Training data: {args.train_data}")
     logger.info(f"Attack prompt: {args.attack_prompt}")
+    logger.info(f"Judge dimension: {args.judge_prompt}")
     logger.info(f"Max steps: {args.max_steps}")
     logger.info(f"LoRA rank: {args.lora_r}")
     logger.info(f"Learning rate: {args.learning_rate}")
@@ -526,7 +569,7 @@ def main():
     train_ds = load_train_dataset(args.train_data, args.attack_prompt)
     
     # GRPO Config
-    run_name = args.run_name or f"exp3_ema{args.ema_beta}_{args.attack_prompt}"
+    run_name = args.run_name or f"exp3_ema{args.ema_beta}_{args.attack_prompt}_{args.judge_prompt}"
     grpo_cfg = GRPOConfig(
         output_dir=args.output_dir,
         per_device_train_batch_size=args.per_device_train_batch_size,

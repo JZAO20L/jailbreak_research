@@ -3,8 +3,8 @@
 # Experiment 3: Adaptive Hybrid Reward GRPO - Execution Script
 #
 # This script runs 6 experiments with different EMA beta values:
-#   EMA beta: 0, 0.5, 0.67, 0.8, 0.9, 0.95
-#   Window size: 1, 2, 3, 5, 10, 20
+#   EMA beta: 0, 0.67, 0.8, 0.9
+#   Window size: 1, 3, 5, 10
 #
 # Each experiment:
 #   1. Start Target + Guard services (GPU1)
@@ -13,11 +13,11 @@
 #   4. Clean up for next experiment
 #
 # Usage:
-#   bash exp.sh                     # Run all 6 experiments
-#   bash exp.sh --ema_beta 0.95     # Run single experiment
+#   bash exp.sh                     # Run all 4 experiments
+#   bash exp.sh --ema_beta 0.9      # Run single experiment
 #   bash exp.sh --attack_prompt hypothetical_scenario  # Use specific attack prompt
 #   bash exp.sh --reset             # Clear checkpoints and start fresh
-#   bash exp.sh --max_steps 1000    # Override max steps
+#   bash exp.sh --max_steps 500     # Override max steps
 #
 # Reference: TODO.md (Experiment 3), NEW_IDEA.md
 # =============================================================================
@@ -38,9 +38,9 @@ EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/val.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
 
 # Model paths
-POLICY_MODEL="${POLICY_MODEL:-/home/tiger/models/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/home/tiger/models/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/home/tiger/models/Qwen3Guard-Gen-4B}"
+POLICY_MODEL="${POLICY_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
+TARGET_MODEL="${TARGET_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
+GUARD_MODEL="${GUARD_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B}"
 
 # Ports
 TARGET_PORT=8001
@@ -56,28 +56,35 @@ VLLM_GPU_UTIL_GUARD=0.4
 VLLM_GPU_UTIL_POLICY=0.9
 
 # Training config (from TODO.md)
-MAX_STEPS="${MAX_STEPS:-1000}"
+MAX_STEPS="${MAX_STEPS:-500}"
 LEARNING_RATE="${LEARNING_RATE:-1e-5}"
 NUM_GENERATIONS="${NUM_GENERATIONS:-8}"
 BETA="${BETA:-0.05}"
 
 # Adaptive reward config (fixed for all experiments except ema_beta)
 ALPHA=2.0
-DELTA=-1.0
-LAMBDA_MIN=0.2
-LAMBDA_MAX=0.8
+DELTA=-2.0
+LAMBDA_MIN=0.1
+LAMBDA_MAX=0.9
 
-# EMA beta values for ablation (from TODO.md)
-# Window size = 1/(1-beta)
-EMA_BETAS_DEFAULT=(0 0.5 0.67 0.8 0.9 0.95)
-WINDOW_SIZES=("1" "2" "3" "5" "10" "20")
+# EMA beta values for ablation (window = 1/(1-beta))
+# Window 1, 5, 10 → beta 0, 0.8, 0.9
+EMA_BETAS_DEFAULT=(0 0.8 0.9)
+WINDOW_SIZES=("1" "5" "10")
 
-# Attack prompts (from Experiment 1 top-3)
-ATTACK_PROMPTS_DEFAULT=("hypothetical_scenario" "creative_writing" "role_playing")
+# 3 prompt combinations (best from Experiment 2 re-evaluation)
+# Each: attack_prompt + its best judge dimension
+# Based on: base model baseline → trained LoRA re-eval (same test.jsonl)
+# 1. hypothetical_scenario + idea_preservation = 27.0% (+0.8% vs baseline 26.2%)
+# 2. hypothetical_scenario + naturalness = 26.7% (+0.5% vs baseline 26.2%)
+# 3. role_playing + idea_preservation = 26.4% (+0.2% vs baseline 26.2%)
+COMBINATIONS_DEFAULT=(
+    "hypothetical_scenario:idea_preservation"
+    "hypothetical_scenario:naturalness"
+    "role_playing:idea_preservation"
+)
 
-# Default: run all EMA beta experiments on single attack prompt
-SELECTED_EMA_BETA=""
-SELECTED_ATTACK_PROMPT=""
+SELECTED_COMBINATION=""
 RESET_CKPT=false
 
 # =========================
@@ -89,8 +96,8 @@ while [[ $# -gt 0 ]]; do
             SELECTED_EMA_BETA="$2"
             shift 2
             ;;
-        --attack_prompt)
-            SELECTED_ATTACK_PROMPT="$2"
+        --combination)
+            SELECTED_COMBINATION="$2"
             shift 2
             ;;
         --max_steps)
@@ -105,10 +112,13 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [options]"
             echo ""
             echo "Options:"
-            echo "  --ema_beta VALUE        Run single EMA beta experiment (default: all 6)"
-            echo "                           Values: 0, 0.5, 0.67, 0.8, 0.9, 0.95"
-            echo "  --attack_prompt NAME    Attack prompt strategy (default: hypothetical_scenario)"
-            echo "  --max_steps N           Training steps (default: 1000)"
+            echo "  --ema_beta VALUE        Run single EMA beta experiment (default: all 3)"
+            echo "                           Values: 0, 0.8, 0.9"
+            echo "  --combination ATTACK:JUDGE  Run single prompt combination"
+            echo "                           Values: hypothetical_scenario:idea_preservation,"
+            echo "                           hypothetical_scenario:naturalness,"
+            echo "                           role_playing:idea_preservation"
+            echo "  --max_steps N           Training steps (default: 500)"
             echo "  --reset                 Clear checkpoints and start fresh"
             echo "  --help                  Show this help"
             exit 0
@@ -126,10 +136,10 @@ else
     EMA_BETAS=("${EMA_BETAS_DEFAULT[@]}")
 fi
 
-if [ -n "$SELECTED_ATTACK_PROMPT" ]; then
-    ATTACK_PROMPTS=("$SELECTED_ATTACK_PROMPT")
+if [ -n "$SELECTED_COMBINATION" ]; then
+    COMBINATIONS=("$SELECTED_COMBINATION")
 else
-    ATTACK_PROMPTS=("${ATTACK_PROMPTS_DEFAULT[@]:0:1}")  # Default: only top-1
+    COMBINATIONS=("${COMBINATIONS_DEFAULT[@]}")
 fi
 
 # =========================
@@ -178,14 +188,14 @@ start_target_service() {
         log "Target already running"
         return 0
     fi
-    
-    CUDA_VISIBLE_DEVICES=2 nohup vllm serve "$TARGET_MODEL" \
+
+    CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
         --host 127.0.0.1 --port $TARGET_PORT \
         --max-model-len $VLLM_MAX_MODEL_LEN_TARGET \
         --gpu-memory-utilization $VLLM_GPU_UTIL_TARGET \
         --served-model-name target \
         > "$OUTPUT_DIR/target_vllm.log" 2>&1 &
-    
+
     wait_for_port "$TARGET_PORT"
 }
 
@@ -195,14 +205,14 @@ start_guard_service() {
         log "Guard already running"
         return 0
     fi
-    
-    CUDA_VISIBLE_DEVICES=3 nohup vllm serve "$GUARD_MODEL" \
+
+    CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$GUARD_MODEL" \
         --host 127.0.0.1 --port $GUARD_PORT \
         --max-model-len $VLLM_MAX_MODEL_LEN_GUARD \
         --gpu-memory-utilization $VLLM_GPU_UTIL_GUARD \
         --served-model-name guard \
         > "$OUTPUT_DIR/guard_vllm.log" 2>&1 &
-    
+
     wait_for_port "$GUARD_PORT"
 }
 
@@ -265,11 +275,12 @@ with open('$CKPT_FILE', 'w') as f:
 run_training() {
     local ema_beta=$1
     local attack_prompt=$2
-    local exp_key="ema${ema_beta}_${attack_prompt}"
+    local judge_prompt=$3
+    local exp_key="ema${ema_beta}_${attack_prompt}_${judge_prompt}"
     local exp_output="$OUTPUT_DIR/$exp_key"
-    
+
     log "============================================================"
-    log "Training: EMA beta=$ema_beta, Attack prompt=$attack_prompt"
+    log "Training: EMA beta=$ema_beta, Attack=$attack_prompt, Judge=$judge_prompt"
     log "============================================================"
     
     mkdir -p "$exp_output"
@@ -283,13 +294,14 @@ run_training() {
     log "Window size: ~$window_size"
     
     # Run training
-    CUDA_VISIBLE_DEVICES=0,1 python "$SCRIPT_DIR/adaptive_hybrid_reward_grpo.py" \
+    CUDA_VISIBLE_DEVICES=0 python "$SCRIPT_DIR/adaptive_hybrid_reward_grpo.py" \
         --ema_beta "$ema_beta" \
         --alpha "$ALPHA" \
         --delta "$DELTA" \
         --lambda_min "$LAMBDA_MIN" \
         --lambda_max "$LAMBDA_MAX" \
         --attack_prompt "$attack_prompt" \
+        --judge_prompt "$judge_prompt" \
         --train_data "$TRAIN_DATA" \
         --max_steps "$MAX_STEPS" \
         --learning_rate "$LEARNING_RATE" \
@@ -304,23 +316,66 @@ run_training() {
 }
 
 # =========================
+# Baseline Evaluation (untrained model + same rewrite prompt)
+# =========================
+run_baseline_evaluation() {
+    local attack_prompt=$1
+    local judge_prompt=$2
+    local exp_key="baseline_base_${attack_prompt}_${judge_prompt}"
+    local baseline_output="$OUTPUT_DIR/$exp_key"
+
+    # Check if already evaluated
+    if [ -f "$baseline_output/eval_results/summary.json" ]; then
+        log "[SKIP] Baseline evaluation: $exp_key (already exists)"
+        return 0
+    fi
+
+    log "============================================================"
+    log "Baseline Evaluation: Untrained model + same rewrite prompt"
+    log "Attack: $attack_prompt, Judge: $judge_prompt"
+    log "============================================================"
+
+    mkdir -p "$baseline_output/eval_results"
+
+    # Start Policy without LoRA (base model only)
+    start_policy_service
+
+    python "$BASE_DIR/scripts/eval.py" \
+        --eval_path "$EVAL_DATA" \
+        --base_model_path "$POLICY_MODEL" \
+        --target_model_path "$TARGET_MODEL" \
+        --guard_model_path "$GUARD_MODEL" \
+        --policy_port "$POLICY_PORT" \
+        --target_port "$TARGET_PORT" \
+        --guard_port "$GUARD_PORT" \
+        --output_root "$baseline_output/eval_results" \
+        --run_name "eval_${exp_key}"
+
+    # Stop Policy service
+    stop_policy_service
+
+    log "Baseline evaluation complete: $exp_key"
+}
+
+# =========================
 # Evaluation Function
 # =========================
 run_evaluation() {
     local ema_beta=$1
     local attack_prompt=$2
-    local exp_key="ema${ema_beta}_${attack_prompt}"
+    local judge_prompt=$3
+    local exp_key="ema${ema_beta}_${attack_prompt}_${judge_prompt}"
     local exp_output="$OUTPUT_DIR/$exp_key"
     local lora_path="$exp_output/final_lora"
-    
+
     # Check if LoRA exists
     if [ ! -d "$lora_path" ]; then
         log "[SKIP] Evaluation: $exp_key (LoRA not found)"
         return 1
     fi
-    
+
     log "============================================================"
-    log "Evaluation: EMA beta=$ema_beta, Attack prompt=$attack_prompt"
+    log "Evaluation: EMA beta=$ema_beta, Attack=$attack_prompt, Judge=$judge_prompt"
     log "============================================================"
     
     # Stop any existing Policy service
@@ -365,7 +420,7 @@ run_evaluation() {
 # =========================
 # Main Execution
 # =========================
-TOTAL_EXPS=$(( ${#EMA_BETAS[@]} * ${#ATTACK_PROMPTS[@]} ))
+TOTAL_EXPS=$(( ${#EMA_BETAS[@]} * ${#COMBINATIONS[@]} ))
 
 # Load checkpoint
 COMPLETED_STR=$(load_checkpoint)
@@ -388,7 +443,8 @@ log "Training data: $TRAIN_DATA"
 log "Evaluation data: $EVAL_DATA"
 log "Output directory: $OUTPUT_DIR"
 log "EMA beta values: ${EMA_BETAS[*]}"
-log "Attack prompts: ${ATTACK_PROMPTS[*]}"
+log "Combinations: ${COMBINATIONS[*]}"
+log "Lambda range: $LAMBDA_MIN - $LAMBDA_MAX"
 log "Total experiments: $TOTAL_EXPS"
 log "Completed: $COMPLETED_COUNT"
 log "Remaining: $((TOTAL_EXPS - COMPLETED_COUNT))"
@@ -408,17 +464,19 @@ if [ -n "$COMPLETED_STR" ]; then
 fi
 
 for ema_beta in "${EMA_BETAS[@]}"; do
-    for attack_prompt in "${ATTACK_PROMPTS[@]}"; do
+    for combination in "${COMBINATIONS[@]}"; do
+        attack_prompt="${combination%%:*}"
+        judge_prompt="${combination##*:}"
         EXP_IDX=$((EXP_IDX + 1))
-        
-        EXP_KEY="ema${ema_beta}_${attack_prompt}"
-        
+
+        EXP_KEY="ema${ema_beta}_${attack_prompt}_${judge_prompt}"
+
         # Check if already completed
         if echo " $COMPLETED_LIST " | grep -q " $EXP_KEY "; then
             log "[SKIP] $EXP_KEY (checkpoint)"
             continue
         fi
-        
+
         # Check if LoRA exists (from previous incomplete run)
         if [ -d "$OUTPUT_DIR/$EXP_KEY/final_lora" ]; then
             log "[SKIP] $EXP_KEY (LoRA exists)"
@@ -426,22 +484,22 @@ for ema_beta in "${EMA_BETAS[@]}"; do
             save_checkpoint "$COMPLETED_LIST"
             continue
         fi
-        
+
         # Progress
         print_progress $((COMPLETED_COUNT + 1)) $TOTAL_EXPS
         log ""
-        
+
         # Training
-        run_training "$ema_beta" "$attack_prompt"
-        
+        run_training "$ema_beta" "$attack_prompt" "$judge_prompt"
+
         # Evaluation
-        run_evaluation "$ema_beta" "$attack_prompt"
-        
+        run_evaluation "$ema_beta" "$attack_prompt" "$judge_prompt"
+
         # Update checkpoint
         COMPLETED_LIST="$COMPLETED_LIST $EXP_KEY"
         COMPLETED_COUNT=$((COMPLETED_COUNT + 1))
         save_checkpoint "$COMPLETED_LIST"
-        
+
         log "[$EXP_IDX/$TOTAL_EXPS] Complete: $EXP_KEY"
     done
 done
@@ -453,10 +511,8 @@ log "============================================================"
 log "Results in: $OUTPUT_DIR"
 log ""
 
-# Generate summary (if summarize script exists)
-if [ -f "$SCRIPT_DIR/summarize_results.py" ]; then
-    log "Generating summary report..."
-    python "$SCRIPT_DIR/summarize_results.py" --output_dir "$OUTPUT_DIR"
-fi
+# Generate summary
+log "Generating summary report..."
+python3 "$SCRIPT_DIR/summarize_results.py" --output_dir "$OUTPUT_DIR"
 
 log "============================================================"
