@@ -24,7 +24,7 @@ import argparse
 # Known values for parsing experiment names
 # =============================================================================
 
-KNOWN_EMA_BETAS = ["0", "0.67", "0.8", "0.9"]
+KNOWN_EMA_BETAS = ["0", "0.8", "0.9"]
 
 KNOWN_ATTACK_PROMPTS = [
     "hypothetical_scenario",

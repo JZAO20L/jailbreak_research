@@ -64,24 +64,26 @@ BETA="${BETA:-0.05}"
 # Adaptive reward config (fixed for all experiments except ema_beta)
 ALPHA=2.0
 DELTA=-2.0
-LAMBDA_MIN=0.2
-LAMBDA_MAX=0.8
+LAMBDA_MIN=0.1
+LAMBDA_MAX=0.9
 
-# EMA beta values for ablation (from TODO.md)
-# Window size = 1/(1-beta)
-EMA_BETAS_DEFAULT=(0 0.67 0.8 0.9)
-WINDOW_SIZES=("1" "3" "5" "10")
+# EMA beta values for ablation (window = 1/(1-beta))
+# Window 1, 5, 10 → beta 0, 0.8, 0.9
+EMA_BETAS_DEFAULT=(0 0.8 0.9)
+WINDOW_SIZES=("1" "5" "10")
 
-# Attack prompts (from Experiment 1 top-3)
-ATTACK_PROMPTS_DEFAULT=("hypothetical_scenario" "creative_writing" "role_playing")
+# 3 prompt combinations (best from Experiment 2)
+# Each: attack_prompt + its best judge dimension
+# 1. role_playing + role_playing = 27.3%
+# 2. hypothetical_scenario + naturalness = 26.7%
+# 3. creative_writing + stealthiness = 26.1%
+COMBINATIONS_DEFAULT=(
+    "role_playing:role_playing"
+    "hypothetical_scenario:naturalness"
+    "creative_writing:stealthiness"
+)
 
-# Judge prompt dimension (aligned with Experiment 2)
-JUDGE_PROMPT_DEFAULT="role_playing"
-
-# Default: run all EMA beta experiments on single attack prompt
-SELECTED_EMA_BETA=""
-SELECTED_ATTACK_PROMPT=""
-SELECTED_JUDGE_PROMPT=""
+SELECTED_COMBINATION=""
 RESET_CKPT=false
 
 # =========================
@@ -93,12 +95,8 @@ while [[ $# -gt 0 ]]; do
             SELECTED_EMA_BETA="$2"
             shift 2
             ;;
-        --attack_prompt)
-            SELECTED_ATTACK_PROMPT="$2"
-            shift 2
-            ;;
-        --judge_prompt)
-            SELECTED_JUDGE_PROMPT="$2"
+        --combination)
+            SELECTED_COMBINATION="$2"
             shift 2
             ;;
         --max_steps)
@@ -113,9 +111,12 @@ while [[ $# -gt 0 ]]; do
             echo "Usage: $0 [options]"
             echo ""
             echo "Options:"
-            echo "  --ema_beta VALUE        Run single EMA beta experiment (default: all 4)"
-            echo "                           Values: 0, 0.67, 0.8, 0.9"
-            echo "  --attack_prompt NAME    Attack prompt strategy (default: hypothetical_scenario)"
+            echo "  --ema_beta VALUE        Run single EMA beta experiment (default: all 3)"
+            echo "                           Values: 0, 0.8, 0.9"
+            echo "  --combination ATTACK:JUDGE  Run single prompt combination"
+            echo "                           Values: role_playing:role_playing,"
+            echo "                           hypothetical_scenario:naturalness,"
+            echo "                           creative_writing:stealthiness"
             echo "  --max_steps N           Training steps (default: 500)"
             echo "  --reset                 Clear checkpoints and start fresh"
             echo "  --help                  Show this help"
@@ -134,16 +135,10 @@ else
     EMA_BETAS=("${EMA_BETAS_DEFAULT[@]}")
 fi
 
-if [ -n "$SELECTED_ATTACK_PROMPT" ]; then
-    ATTACK_PROMPTS=("$SELECTED_ATTACK_PROMPT")
+if [ -n "$SELECTED_COMBINATION" ]; then
+    COMBINATIONS=("$SELECTED_COMBINATION")
 else
-    ATTACK_PROMPTS=("${ATTACK_PROMPTS_DEFAULT[@]:0:1}")  # Default: only top-1
-fi
-
-if [ -n "$SELECTED_JUDGE_PROMPT" ]; then
-    JUDGE_PROMPT="$SELECTED_JUDGE_PROMPT"
-else
-    JUDGE_PROMPT="$JUDGE_PROMPT_DEFAULT"
+    COMBINATIONS=("${COMBINATIONS_DEFAULT[@]}")
 fi
 
 # =========================
@@ -279,11 +274,12 @@ with open('$CKPT_FILE', 'w') as f:
 run_training() {
     local ema_beta=$1
     local attack_prompt=$2
-    local exp_key="ema${ema_beta}_${attack_prompt}_${JUDGE_PROMPT}"
+    local judge_prompt=$3
+    local exp_key="ema${ema_beta}_${attack_prompt}_${judge_prompt}"
     local exp_output="$OUTPUT_DIR/$exp_key"
 
     log "============================================================"
-    log "Training: EMA beta=$ema_beta, Attack prompt=$attack_prompt, Judge=$JUDGE_PROMPT"
+    log "Training: EMA beta=$ema_beta, Attack=$attack_prompt, Judge=$judge_prompt"
     log "============================================================"
     
     mkdir -p "$exp_output"
@@ -304,7 +300,7 @@ run_training() {
         --lambda_min "$LAMBDA_MIN" \
         --lambda_max "$LAMBDA_MAX" \
         --attack_prompt "$attack_prompt" \
-        --judge_prompt "$JUDGE_PROMPT" \
+        --judge_prompt "$judge_prompt" \
         --train_data "$TRAIN_DATA" \
         --max_steps "$MAX_STEPS" \
         --learning_rate "$LEARNING_RATE" \
@@ -323,7 +319,8 @@ run_training() {
 # =========================
 run_baseline_evaluation() {
     local attack_prompt=$1
-    local exp_key="baseline_base_${attack_prompt}_${JUDGE_PROMPT}"
+    local judge_prompt=$2
+    local exp_key="baseline_base_${attack_prompt}_${judge_prompt}"
     local baseline_output="$OUTPUT_DIR/$exp_key"
 
     # Check if already evaluated
@@ -334,7 +331,7 @@ run_baseline_evaluation() {
 
     log "============================================================"
     log "Baseline Evaluation: Untrained model + same rewrite prompt"
-    log "Attack prompt: $attack_prompt, Judge: $JUDGE_PROMPT"
+    log "Attack: $attack_prompt, Judge: $judge_prompt"
     log "============================================================"
 
     mkdir -p "$baseline_output/eval_results"
@@ -365,18 +362,19 @@ run_baseline_evaluation() {
 run_evaluation() {
     local ema_beta=$1
     local attack_prompt=$2
-    local exp_key="ema${ema_beta}_${attack_prompt}_${JUDGE_PROMPT}"
+    local judge_prompt=$3
+    local exp_key="ema${ema_beta}_${attack_prompt}_${judge_prompt}"
     local exp_output="$OUTPUT_DIR/$exp_key"
     local lora_path="$exp_output/final_lora"
-    
+
     # Check if LoRA exists
     if [ ! -d "$lora_path" ]; then
         log "[SKIP] Evaluation: $exp_key (LoRA not found)"
         return 1
     fi
-    
+
     log "============================================================"
-    log "Evaluation: EMA beta=$ema_beta, Attack prompt=$attack_prompt"
+    log "Evaluation: EMA beta=$ema_beta, Attack=$attack_prompt, Judge=$judge_prompt"
     log "============================================================"
     
     # Stop any existing Policy service
@@ -421,7 +419,7 @@ run_evaluation() {
 # =========================
 # Main Execution
 # =========================
-TOTAL_EXPS=$(( ${#EMA_BETAS[@]} * ${#ATTACK_PROMPTS[@]} ))
+TOTAL_EXPS=$(( ${#EMA_BETAS[@]} * ${#COMBINATIONS[@]} ))
 
 # Load checkpoint
 COMPLETED_STR=$(load_checkpoint)
@@ -444,7 +442,8 @@ log "Training data: $TRAIN_DATA"
 log "Evaluation data: $EVAL_DATA"
 log "Output directory: $OUTPUT_DIR"
 log "EMA beta values: ${EMA_BETAS[*]}"
-log "Attack prompts: ${ATTACK_PROMPTS[*]}"
+log "Combinations: ${COMBINATIONS[*]}"
+log "Lambda range: $LAMBDA_MIN - $LAMBDA_MAX"
 log "Total experiments: $TOTAL_EXPS"
 log "Completed: $COMPLETED_COUNT"
 log "Remaining: $((TOTAL_EXPS - COMPLETED_COUNT))"
@@ -463,8 +462,10 @@ log ""
 log "============================================================"
 log "Baseline Evaluation: Untrained model + same rewrite prompt"
 log "============================================================"
-for attack_prompt in "${ATTACK_PROMPTS[@]}"; do
-    run_baseline_evaluation "$attack_prompt"
+for combination in "${COMBINATIONS[@]}"; do
+    attack_prompt="${combination%%:*}"
+    judge_prompt="${combination##*:}"
+    run_baseline_evaluation "$attack_prompt" "$judge_prompt"
 done
 
 # Run experiments
@@ -475,17 +476,19 @@ if [ -n "$COMPLETED_STR" ]; then
 fi
 
 for ema_beta in "${EMA_BETAS[@]}"; do
-    for attack_prompt in "${ATTACK_PROMPTS[@]}"; do
+    for combination in "${COMBINATIONS[@]}"; do
+        attack_prompt="${combination%%:*}"
+        judge_prompt="${combination##*:}"
         EXP_IDX=$((EXP_IDX + 1))
-        
-        EXP_KEY="ema${ema_beta}_${attack_prompt}"
-        
+
+        EXP_KEY="ema${ema_beta}_${attack_prompt}_${judge_prompt}"
+
         # Check if already completed
         if echo " $COMPLETED_LIST " | grep -q " $EXP_KEY "; then
             log "[SKIP] $EXP_KEY (checkpoint)"
             continue
         fi
-        
+
         # Check if LoRA exists (from previous incomplete run)
         if [ -d "$OUTPUT_DIR/$EXP_KEY/final_lora" ]; then
             log "[SKIP] $EXP_KEY (LoRA exists)"
@@ -493,22 +496,22 @@ for ema_beta in "${EMA_BETAS[@]}"; do
             save_checkpoint "$COMPLETED_LIST"
             continue
         fi
-        
+
         # Progress
         print_progress $((COMPLETED_COUNT + 1)) $TOTAL_EXPS
         log ""
-        
+
         # Training
-        run_training "$ema_beta" "$attack_prompt"
-        
+        run_training "$ema_beta" "$attack_prompt" "$judge_prompt"
+
         # Evaluation
-        run_evaluation "$ema_beta" "$attack_prompt"
-        
+        run_evaluation "$ema_beta" "$attack_prompt" "$judge_prompt"
+
         # Update checkpoint
         COMPLETED_LIST="$COMPLETED_LIST $EXP_KEY"
         COMPLETED_COUNT=$((COMPLETED_COUNT + 1))
         save_checkpoint "$COMPLETED_LIST"
-        
+
         log "[$EXP_IDX/$TOTAL_EXPS] Complete: $EXP_KEY"
     done
 done
