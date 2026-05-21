@@ -64,9 +64,9 @@ from src.prompts import REWRITE_PROMPT, GUARD_PROMPT
 from src.reward.simple_rule_weight import SimpleRuleCalculator, SimpleRuleConfig
 from experiments.hybrid_reward_exp.judge_prompts import (
     JUDGE_PROMPTS,
-    get_judge_prompt,
-    parse_judge_response,
+    get_judge_template,
 )
+import re
 
 
 # =============================================================================
@@ -323,7 +323,7 @@ def judge_reward(
         original_prompts = prompts
 
     # Get judge template for specified dimension
-    judge_template = get_judge_prompt(args.judge_prompt)
+    judge_template = get_judge_template(args.judge_prompt)
 
     judge_prompts_batch = []
     for orig, rewritten in zip(original_prompts, completions):
@@ -351,7 +351,16 @@ def judge_reward(
             raw_scores.append(0.1)  # Fallback low score
             continue
 
-        score = parse_judge_response(str(resp))
+        # Parse SCORE=0.XX format
+        score = 0.1  # Default fallback
+        try:
+            match = re.search(r"SCORE=([0-9]+\.[0-9]+)", str(resp))
+            if match:
+                score = float(match.group(1))
+                score = max(0.0, min(1.0, score))
+        except:
+            pass
+
         raw_scores.append(score)
 
     return raw_scores
