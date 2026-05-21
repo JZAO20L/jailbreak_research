@@ -44,7 +44,7 @@ The original adaptive weight mechanism didn't improve ASR after training. This s
 
 Based on Experiment 2 re-evaluation results:
 - **Attack prompt**: `hypothetical_scenario` (27.0% ASR after training, +0.8% vs baseline)
-- **Judge dimension**: `idea_preservation` (best overall performer)
+- **Judge dimension**: `idea_preservation_single` (best overall performer)
 
 ### 3 Experiments
 
@@ -97,7 +97,7 @@ python experiments/simple_rule_weight_exp/simple_rule_weight_grpo.py \
     --lambda_min 0.2 \
     --lambda_max 0.8 \
     --attack_prompt hypothetical_scenario \
-    --judge_prompt idea_preservation \
+    --judge_prompt idea_preservation_single \
     --max_steps 500 \
     --output_dir experiments/simple_rule_weight_exp/output/exp2 \
     --run_eval_after_train
@@ -106,7 +106,7 @@ python experiments/simple_rule_weight_exp/simple_rule_weight_grpo.py \
 python experiments/simple_rule_weight_exp/simple_rule_weight_grpo.py \
     --fixed_lambda 1.0 \
     --attack_prompt hypothetical_scenario \
-    --judge_prompt idea_preservation \
+    --judge_prompt idea_preservation_single \
     --max_steps 500 \
     --output_dir experiments/simple_rule_weight_exp/output/exp1 \
     --run_eval_after_train

@@ -47,7 +47,7 @@ GRAD_ACCUM=4
 
 # Attack & Judge (Exp2 best)
 ATTACK_PROMPT="hypothetical_scenario"
-JUDGE_PROMPT="idea_preservation"
+JUDGE_PROMPT="idea_preservation_single"
 
 # LoRA config
 LORA_R=16

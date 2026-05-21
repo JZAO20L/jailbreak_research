@@ -110,8 +110,8 @@ DEFAULT_ARGS = {
     # Jailbreak prompt strategy (Exp2 best: hypothetical_scenario + idea_preservation = 27.0%)
     "attack_prompt": "hypothetical_scenario",
 
-    # Judge prompt dimension (Exp2 best: idea_preservation)
-    "judge_prompt": "idea_preservation",
+    # Judge prompt dimension (Exp2 best: idea_preservation_single)
+    "judge_prompt": "idea_preservation_single",
 
     # Output
     "output_dir": "experiments/simple_rule_weight_exp/output",
@@ -168,7 +168,8 @@ def parse_args():
 
     # Judge prompt dimension (Exp2 best)
     parser.add_argument("--judge_prompt", type=str, default=DEFAULT_ARGS["judge_prompt"],
-                        help="Judge prompt dimension from Experiment 2 best")
+                        help="Judge prompt template. Options: idea_preservation_single, "
+                             "stealthiness_single, naturalness_single, hypothetical_scenario_single, etc.")
 
     # Data
     parser.add_argument("--train_data", type=str,
