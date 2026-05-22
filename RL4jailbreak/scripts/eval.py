@@ -168,21 +168,31 @@ def run_single_eval(
     sleep_between_stage: float = 5.0,
 ) -> Dict[str, Any]:
     """
-    执行单次评估 (使用已存在的服务，不加载/卸载模型):
-    1. 连接 policy (GPU0) -> 重写 prompts
-    2. 连接 target (GPU1) + guard (GPU1) -> ASR 测试
+    执行单次评估 (自动启动 vLLM 服务):
+    1. 启动 policy (GPU0) -> 重写 prompts
+    2. 启动 target (GPU1) + guard (GPU1) -> ASR 测试
     """
     lora_label = "base" if lora_path is None else safe_name(os.path.basename(lora_path.rstrip("/")))
 
-    # ---- Step 1: 连接已启动的 Policy (GPU0) ----
-    logger.info(f"[1/4] Connect to policy vLLM (GPU0:{policy_port}): lora={lora_label}")
+    # ---- Step 1: 启动 Policy (GPU0) ----
+    logger.info(f"[1/4] Launch policy vLLM (GPU0:{policy_port}): lora={lora_label}")
+    
+    # 判断是否使用 LoRA
+    use_lora = lora_path is not None
+    
     policy_client = VLLMClient(
         model_name="policy",
         model_path=base_model_path,
         host=host,
         port=policy_port,
-        launch_server=False,  # 不启动服务，只连接
+        launch_server=True,  # ✅ 自动启动服务
         timeout=timeout,
+        gpu_id="0",  # GPU0
+        gpu_memory_utilization=gpu_memory_utilization,
+        max_model_len=max_model_len,
+        enable_lora=use_lora,
+        lora_path=lora_path if use_lora else None,
+        lora_name="eval_lora" if use_lora else None,
     )
 
     # 临时替换全局 REWRITE_PROMPT
@@ -210,8 +220,11 @@ def run_single_eval(
         if original_rewrite_prompt is not None:
             import src.generate as gen_mod
             gen_mod.REWRITE_PROMPT = original_rewrite_prompt
-        # 不关闭服务，因为服务是外部的
-        policy_client = None  # 释放引用
+        # 关闭 policy 服务
+        policy_client.close()
+        policy_client = None
+        gc.collect()
+        torch.cuda.empty_cache()
         logger.info(f"[2/4] Policy rewrite done (lora={lora_label})")
 
     # 收集重写后的 prompts

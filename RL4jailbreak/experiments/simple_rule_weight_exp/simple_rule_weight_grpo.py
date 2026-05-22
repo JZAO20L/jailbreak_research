@@ -647,48 +647,14 @@ def main():
 
     # =================================================================
     # Post-Training Evaluation (if requested)
+    # Note: Actual eval is handled by eval.sh after all experiments complete.
+    # This section only saves LoRA weights.
     # =================================================================
     if args.run_eval_after_train:
         logger.info("=" * 70)
-        logger.info("Starting post-training evaluation...")
+        logger.info("Training complete. LoRA weights saved.")
+        logger.info("Evaluation will be run by eval.sh after all experiments finish.")
         logger.info("=" * 70)
-
-        eval_output_dir = os.path.join(args.output_dir, "eval_results")
-        os.makedirs(eval_output_dir, exist_ok=True)
-
-        # Import eval script
-        eval_script_path = os.path.join(BASE_DIR, "scripts", "eval.py")
-
-        import subprocess
-        eval_cmd = [
-            sys.executable, eval_script_path,
-            "--eval_path", args.eval_data,
-            "--lora_paths", LORA_DIR,
-            "--strategy_name", args.attack_prompt,
-            "--base_model_path", args.policy_model,
-            "--target_model_path", args.policy_model,  # target uses same base
-            "--guard_model_path", "/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B",
-            "--policy_port", str(args.eval_policy_port),
-            "--target_port", str(args.target_port),
-            "--guard_port", str(args.guard_port),
-            "--output_root", eval_output_dir,
-            "--run_name", f"eval_{run_name}",
-        ]
-
-        logger.info(f"Eval command: {' '.join(eval_cmd)}")
-
-        try:
-            result = subprocess.run(
-                eval_cmd,
-                cwd=BASE_DIR,
-                capture_output=False,  # Stream to console
-                check=True,
-            )
-            logger.info("Post-training evaluation completed successfully!")
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Post-training evaluation failed: {e}")
-        except Exception as e:
-            logger.error(f"Failed to run evaluation: {e}")
 
     logger.info("=" * 70)
     logger.info("Training complete!")

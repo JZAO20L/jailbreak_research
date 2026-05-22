@@ -81,6 +81,94 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
 
+# Check if vLLM server is ready on a given port
+check_vllm_server() {
+    local port=$1
+    local max_wait=${2:-60}  # default wait 60 seconds
+    
+    log "Checking vLLM server on port $port..."
+    
+    for i in $(seq 1 $max_wait); do
+        if curl -s "http://127.0.0.1:${port}/health" > /dev/null 2>&1; then
+            log "✓ vLLM server on port $port is ready!"
+            return 0
+        fi
+        sleep 1
+    done
+    
+    log "✗ vLLM server on port $port is NOT ready after ${max_wait}s"
+    return 1
+}
+
+# Launch vLLM server in background
+launch_vllm_server() {
+    local model_path=$1
+    local port=$2
+    local gpu_id=$3
+    local log_file=$4
+    local gpu_memory_utilization=${5:-0.9}
+    local max_model_len=${6:-4096}
+    
+    log "Launching vLLM server: model=$model_path, port=$port, GPU=$gpu_id"
+    
+    mkdir -p "$(dirname "$log_file")"
+    
+    CUDA_VISIBLE_DEVICES=$gpu_id VLLM_USE_MODELSCOPE=true nohup vllm serve "$model_path" \
+        --served-model-name "$(basename "$model_path")" \
+        --port "$port" \
+        --host "127.0.0.1" \
+        --max-model-len "$max_model_len" \
+        --tensor-parallel-size 1 \
+        --gpu-memory-utilization "$gpu_memory_utilization" \
+        --dtype auto \
+        > "$log_file" 2>&1 &
+    
+    local pid=$!
+    log "vLLM server started with PID $pid (log: $log_file)"
+    echo $pid
+}
+
+# Wait for server to be ready and launch if not running
+ensure_vllm_server() {
+    local port=$1
+    local model_path=$2
+    local gpu_id=$3
+    local log_file=$4
+    local gpu_memory_utilization=${5:-0.9}
+    local max_model_len=${6:-4096}
+    
+    # Check if server is already running
+    if check_vllm_server "$port" 5; then
+        log "Server on port $port is already running, skipping launch"
+        return 0
+    fi
+    
+    # Launch server
+    launch_vllm_server "$model_path" "$port" "$gpu_id" "$log_file" "$gpu_memory_utilization" "$max_model_len"
+    
+    # Wait for it to be ready
+    check_vllm_server "$port" 120
+}
+
+# Kill vLLM server on a given port
+kill_vllm_server() {
+    local port=$1
+    
+    log "Stopping vLLM server on port $port..."
+    
+    # Find PID by port
+    local pid=$(lsof -ti :$port 2>/dev/null)
+    if [ -n "$pid" ]; then
+        kill $pid 2>/dev/null || true
+        sleep 2
+        # Force kill if still running
+        kill -9 $pid 2>/dev/null || true
+        log "✓ vLLM server on port $port (PID $pid) stopped"
+    else
+        log "No vLLM server found on port $port"
+    fi
+}
+
 run_experiment() {
     local exp_id=$1
     local run_name=$2
@@ -94,6 +182,31 @@ run_experiment() {
     # Create output directory
     local exp_output="$OUTPUT_DIR/$exp_id"
     mkdir -p "$exp_output"
+
+    # =================================================================
+    # Start vLLM servers before training (target and guard needed)
+    # =================================================================
+    log "Starting vLLM servers for training..."
+    
+    # Target model server (GPU1, port 8001)
+    ensure_vllm_server \
+        "$TARGET_PORT" \
+        "$POLICY_MODEL" \
+        "1" \
+        "$exp_output/logs/vllm_target.log" \
+        "0.9" \
+        "4096"
+    
+    # Guard model server (GPU1, port 8002)
+    ensure_vllm_server \
+        "$GUARD_PORT" \
+        "/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B" \
+        "1" \
+        "$exp_output/logs/vllm_guard.log" \
+        "0.9" \
+        "4096"
+    
+    log "✓ All vLLM servers ready for training"
 
     # Run training
     CUDA_VISIBLE_DEVICES=0 python "$SCRIPT_DIR/simple_rule_weight_grpo.py" \
@@ -118,11 +231,16 @@ run_experiment() {
         --save_steps $SAVE_STEPS \
         --seed $SEED \
         --run_eval_after_train \
+        --eval_policy_port 8003 \
         $params
 
     log "Experiment $exp_id completed!"
     log "Results saved to: $exp_output"
     log "=========================================="
+    
+    # Optional: cleanup vLLM servers after experiment
+    # kill_vllm_server "$TARGET_PORT"
+    # kill_vllm_server "$GUARD_PORT"
 }
 
 # =============================================================================
@@ -168,14 +286,26 @@ log "All experiments completed!"
 log "Results directory: $OUTPUT_DIR"
 
 # =============================================================================
-# Summary
+# Batch Evaluation (run eval.sh to evaluate all final_lora checkpoints)
 # =============================================================================
 log ""
 log "=========================================="
-log "Experiment Summary"
+log "Starting batch evaluation of all checkpoints..."
 log "=========================================="
-log "To evaluate results:"
-log "  bash scripts/eval.py --lora_paths $OUTPUT_DIR/exp1/final_lora $OUTPUT_DIR/exp2/final_lora ..."
+
+EVAL_SCRIPT="$SCRIPT_DIR/eval.sh"
+if [ -f "$EVAL_SCRIPT" ]; then
+    bash "$EVAL_SCRIPT"
+else
+    log "ERROR: Eval script not found: $EVAL_SCRIPT"
+    log "To evaluate manually, run:"
+    log "  bash $EVAL_SCRIPT"
+fi
+
+log ""
+log "=========================================="
+log "All experiments and evaluations complete!"
+log "=========================================="
 log ""
 log "To analyze lambda history:"
 log "  python $SCRIPT_DIR/summarize_results.py --output_dir $OUTPUT_DIR"
