@@ -182,7 +182,6 @@ def run_single_eval(
     use_lora = lora_path is not None
     
     policy_client = VLLMClient(
-        model_name="policy",
         model_path=base_model_path,
         host=host,
         port=policy_port,

@@ -75,8 +75,8 @@ class VLLMClient:
 
     def __init__(
         self,
-        model_name: str,
         model_path: str,
+        model_name: Optional[str] = None,
         port: int = 8000,
         temperature: float = 0.7,
         timeout: float = 120.0,
@@ -98,6 +98,10 @@ class VLLMClient:
         # ===== 额外环境变量 =====
         server_env: Optional[Dict[str, str]] = None,
     ):
+        # 如果未提供model_name，使用model_path的basename
+        if model_name is None:
+            model_name = os.path.basename(model_path)
+
         self.model_name = model_name
         self.model_path = model_path
         self.temperature = float(temperature)
