@@ -203,7 +203,7 @@ class VLLMClient:
             import time
             for i in range(120):
                 try:
-                    resp = self._http_client.get(f"{self.base_url_v1}/health")
+                    resp = self._http_client.get(f"{self.base_url_root}/health")
                     if resp.status_code == 200:
                         print(f"[VLLMClient] vLLM server is ready on port {self.port}!")
                         break
