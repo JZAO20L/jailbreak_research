@@ -6,7 +6,15 @@ Batch Rewrite Script using Qwen3-8B API (阿里云百炼API)
 使用阿里云百炼API调用baseline方法对test集进行rewrite，合成新的攻击prompt数据集
 
 Usage:
-    python baselines/batch_rewrite_api.py --input data/dataset/processed/10k/test.jsonl --output baselines/output
+    # 方式1：通过命令行参数传递API Key（推荐）
+    python baselines/batch_rewrite_api.py --api-key "sk-xxx" --limit 10
+
+    # 方式2：使用默认硬编码API Key（临时方案）
+    python baselines/batch_rewrite_api.py --limit 10
+
+    # 方式3：从环境变量读取（需要在.env中设置DASHSCOPE_API_KEY）
+    export DASHSCOPE_API_KEY="sk-xxx"
+    python baselines/batch_rewrite_api.py --limit 10
 """
 
 import os
@@ -23,6 +31,14 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
 from baselines import get_attacker, list_strategies, STRATEGIES
+
+
+# =============================================================================
+# 默认API Key（临时硬编码方案）
+# =============================================================================
+# 注意：请在此处填入您的阿里云百炼API Key
+# 或者通过命令行参数 --api-key 传递
+DEFAULT_API_KEY = "sk-xxx"  # 替换为您的实际API Key
 
 
 # =============================================================================
@@ -47,7 +63,11 @@ class QwenAPIClient:
     ):
         """
         Args:
-            api_key: 阿里云百炼API Key (默认从环境变量DASHSCOPE_API_KEY获取)
+            api_key: 阿里云百炼API Key
+                优先级：
+                1. 命令行参数 --api-key
+                2. 环境变量 DASHSCOPE_API_KEY
+                3. 硬编码默认值 DEFAULT_API_KEY
             model: 模型名称
             base_url: API base URL
             enable_thinking: 是否启用思考模式
@@ -55,9 +75,16 @@ class QwenAPIClient:
             max_tokens: 最大token数
             timeout: 请求超时时间
         """
-        self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY")
-        if not self.api_key:
-            raise ValueError("DASHSCOPE_API_KEY not found in environment variables")
+        # API Key优先级：命令行参数 > 环境变量 > 默认硬编码
+        self.api_key = api_key or os.getenv("DASHSCOPE_API_KEY") or DEFAULT_API_KEY
+        if not self.api_key or self.api_key == "sk-xxx":
+            raise ValueError(
+                "DASHSCOPE_API_KEY未设置！请使用以下方式之一提供API Key:\n"
+                "  1. 命令行参数: --api-key 'sk-xxx'\n"
+                "  2. 环境变量: export DASHSCOPE_API_KEY='sk-xxx'\n"
+                "  3. 修改脚本中的DEFAULT_API_KEY变量\n"
+                "详见：baselines/README_batch_rewrite.md"
+            )
         
         self.model = model
         self.base_url = base_url
