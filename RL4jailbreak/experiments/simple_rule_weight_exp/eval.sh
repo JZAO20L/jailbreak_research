@@ -268,7 +268,7 @@ run_single_eval() {
         "$OUTPUT_DIR/$exp_id/logs/vllm_target_eval.log" \
         "false" \
         "" \
-        "0.9" \
+        "0.45" \
         "4096"
     wait_for_server "$TARGET_PORT" "target" 120 || {
         log "ERROR: Target server failed to start"
@@ -286,7 +286,7 @@ run_single_eval() {
         "$OUTPUT_DIR/$exp_id/logs/vllm_guard_eval.log" \
         "false" \
         "" \
-        "0.9" \
+        "0.45" \
         "4096"
     wait_for_server "$GUARD_PORT" "guard" 120 || {
         log "ERROR: Guard server failed to start"

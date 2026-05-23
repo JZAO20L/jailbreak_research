@@ -194,7 +194,7 @@ run_experiment() {
         "$POLICY_MODEL" \
         "1" \
         "$exp_output/logs/vllm_target.log" \
-        "0.9" \
+        "0.45" \
         "4096"
     
     # Guard model server (GPU1, port 8002)
@@ -203,7 +203,7 @@ run_experiment() {
         "/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B" \
         "1" \
         "$exp_output/logs/vllm_guard.log" \
-        "0.9" \
+        "0.45" \
         "4096"
     
     log "✓ All vLLM servers ready for training"
