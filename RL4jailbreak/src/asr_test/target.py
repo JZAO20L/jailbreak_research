@@ -84,7 +84,6 @@ class TargetModel:
         from src.vllm_client import VLLMClient
 
         self.client = VLLMClient(
-            model_name="target",
             model_path=self.model_path,
             port=self.port,
             gpu_id=self.gpu_id,

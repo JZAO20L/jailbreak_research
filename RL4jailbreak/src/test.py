@@ -420,7 +420,6 @@ if __name__ == "__main__":
 
     # ---- build vLLM configs ----
     target_cfg = {
-        "model_name": "target",
         "model_path": args.target_model_path,
         "port": args.target_port,
         "gpu_id": args.target_gpu_id,
@@ -430,7 +429,6 @@ if __name__ == "__main__":
         "log_file": args.log_file,
     }
     guard_cfg = {
-        "model_name": "guard",
         "model_path": args.guard_model_path,
         "port": args.guard_port,
         "gpu_id": args.guard_gpu_id,
