@@ -253,7 +253,6 @@ def run_single_eval(
     # ---- Step 2: 连接已启动的 Target + Guard (GPU1) 进行 ASR 测试 ----
     logger.info(f"[3/4] Connect to ASR test services (GPU1:{target_port}/{guard_port}): lora={lora_label}")
     target_cfg = {
-        "model_name": "target",
         "model_path": target_model_path,
         "host": host,
         "port": target_port,
@@ -263,7 +262,6 @@ def run_single_eval(
         "max_model_len": max_model_len,
     }
     guard_cfg = {
-        "model_name": "guard",
         "model_path": guard_model_path,
         "host": host,
         "port": guard_port,
