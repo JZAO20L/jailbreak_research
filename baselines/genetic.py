@@ -63,6 +63,10 @@ class GeneticAttacker(BaseAttacker):
             crossover_rate: Probability of crossover
             elite_size: Number of top individuals to keep unchanged
         """
+        # 移除kwargs中可能存在的max_iterations，避免重复传递
+        if 'max_iterations' in kwargs:
+            max_generations = kwargs.pop('max_iterations')
+        
         super().__init__(max_iterations=max_generations, verbose=verbose, **kwargs)
         self.population_size = population_size
         self.max_generations = max_generations
