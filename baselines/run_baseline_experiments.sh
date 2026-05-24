@@ -51,6 +51,8 @@ INPUT_FILE="data/dataset/processed/10k/test.jsonl"
 OUTPUT_DIR="baselines/output"
 STRATEGIES="deepinception multilingual pair genetic"
 LIMIT=""  # 默认不限制，可通过参数设置
+MAX_WORKERS=8  # 默认并发数，可通过参数设置
+BATCH_SIZE=10  # ASR测试批大小
 
 # 日志目录
 LOG_DIR="baselines/logs"
@@ -78,8 +80,17 @@ while [[ $# -gt 0 ]]; do
             OUTPUT_DIR="$2"
             shift 2
             ;;
+        --max-workers)
+            MAX_WORKERS="$2"
+            shift 2
+            ;;
+        --batch-size)
+            BATCH_SIZE="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown option: $1"
+            echo "Usage: bash baselines/run_baseline_experiments.sh [--limit N] [--max-workers N] [--batch-size N]"
             exit 1
             ;;
     esac
@@ -217,7 +228,7 @@ REWRITE_CMD="python baselines/rewrite_prompts_server_concurrent.py \
     --rewrite-port $TARGET_PORT \
     --guard-port $GUARD_PORT \
     --max-iterations 5 \
-    --max-workers 8"
+    --max-workers $MAX_WORKERS"
 
 if [ -n "$LIMIT" ]; then
     REWRITE_CMD="$REWRITE_CMD --limit $LIMIT"
@@ -266,8 +277,8 @@ for strategy in $STRATEGIES; do
         --output $STRATEGY_OUTPUT \
         --target-port $TARGET_PORT \
         --guard-port $GUARD_PORT \
-        --max-workers 8 \
-        --batch-size 10"
+        --max-workers $MAX_WORKERS \
+        --batch-size $BATCH_SIZE"
     
     if [ -n "$LIMIT" ]; then
         echo "(并发版本不支持limit参数，处理全部数据)"
