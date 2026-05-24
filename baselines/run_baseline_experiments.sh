@@ -10,7 +10,7 @@
 # 1. 启动两个vLLM servers
 # 2. 等待servers就绪
 # 3. 调用rewrite_prompts_server_concurrent.py进行prompt重写（并发版本）
-# 4. 调用asr_test_server.py进行ASR测试
+# 4. 调用asr_test_server_concurrent.py进行ASR测试（并发版本）
 # 5. 关闭servers
 #
 # Usage:
@@ -246,22 +246,40 @@ echo "==========================================================================
 echo ""
 
 # 构建ASR测试命令
-ASR_CMD="python baselines/asr_test_server.py \
-    --input $OUTPUT_DIR \
-    --output $OUTPUT_DIR \
-    --strategies $STRATEGIES \
-    --target-port $TARGET_PORT \
-    --guard-port $GUARD_PORT \
-    --all"
-
-if [ -n "$LIMIT" ]; then
-    ASR_CMD="$ASR_CMD --limit $LIMIT"
-fi
-
-echo "执行命令: $ASR_CMD"
+# 执行ASR测试（并发版本，逐个策略）
+echo "开始ASR测试..."
 echo ""
 
-eval $ASR_CMD
+for strategy in $STRATEGIES; do
+    echo "测试策略: $strategy"
+    
+    STRATEGY_INPUT="$OUTPUT_DIR/${strategy}.jsonl"
+    STRATEGY_OUTPUT="$OUTPUT_DIR/${strategy}_asr.jsonl"
+    
+    if [ ! -f "$STRATEGY_INPUT" ]; then
+        echo "输入文件不存在: $STRATEGY_INPUT"
+        continue
+    fi
+    
+    ASR_CMD="python baselines/asr_test_server_concurrent.py \
+        --input $STRATEGY_INPUT \
+        --output $STRATEGY_OUTPUT \
+        --target-port $TARGET_PORT \
+        --guard-port $GUARD_PORT \
+        --max-workers 8 \
+        --batch-size 10"
+    
+    if [ -n "$LIMIT" ]; then
+        echo "(并发版本不支持limit参数，处理全部数据)"
+    fi
+    
+    echo "执行: $ASR_CMD"
+    eval $ASR_CMD
+    echo ""
+done
+
+# 生成对比结果（使用原版本的--all功能汇总）
+python baselines/asr_test_server.py --input $OUTPUT_DIR --output $OUTPUT_DIR --strategies $STRATEGIES --all --target-port $TARGET_PORT --guard-port $GUARD_PORT
 
 echo ""
 echo "ASR测试完成!"
