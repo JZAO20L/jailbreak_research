@@ -23,10 +23,11 @@ from typing import List, Dict, Any, Optional
 from tqdm import tqdm
 import httpx
 
-# Add RL4jailbreak to path for VLLMClient
+# Add project root and RL4jailbreak to path
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RL_DIR = os.path.join(BASE_DIR, "RL4jailbreak")
-sys.path.insert(0, RL_DIR)
+sys.path.insert(0, BASE_DIR)  # Add project root for baselines import
+sys.path.insert(0, RL_DIR)     # Add RL4jailbreak for VLLMClient import
 
 from src.vllm_client import VLLMClient
 from baselines import get_attacker, list_strategies, STRATEGIES

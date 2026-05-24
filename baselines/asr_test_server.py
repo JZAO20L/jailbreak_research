@@ -23,10 +23,11 @@ from typing import List, Dict, Any, Optional
 from tqdm import tqdm
 import httpx
 
-# Add RL4jailbreak to path for VLLMClient and prompts
+# Add project root and RL4jailbreak to path
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RL_DIR = os.path.join(BASE_DIR, "RL4jailbreak")
-sys.path.insert(0, RL_DIR)
+sys.path.insert(0, BASE_DIR)  # Add project root for baselines import (if needed)
+sys.path.insert(0, RL_DIR)     # Add RL4jailbreak for VLLMClient and prompts import
 
 from src.prompts import GUARD_PROMPT
 from src.utils import extract_label_categories_refusal
