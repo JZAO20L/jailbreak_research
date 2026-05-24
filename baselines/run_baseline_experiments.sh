@@ -9,7 +9,7 @@
 # 流程：
 # 1. 启动两个vLLM servers
 # 2. 等待servers就绪
-# 3. 调用rewrite_prompts_server.py进行prompt重写
+# 3. 调用rewrite_prompts_server_concurrent.py进行prompt重写（并发版本）
 # 4. 调用asr_test_server.py进行ASR测试
 # 5. 关闭servers
 #
@@ -209,15 +209,15 @@ fi
 echo "============================================================================"
 echo ""
 
-# 构建rewrite命令
-REWRITE_CMD="python baselines/rewrite_prompts_server.py \
+# 构建rewrite命令（使用并发版本）
+REWRITE_CMD="python baselines/rewrite_prompts_server_concurrent.py \
     --input $INPUT_FILE \
     --output $OUTPUT_DIR \
     --strategies $STRATEGIES \
     --rewrite-port $TARGET_PORT \
-    --target-port $TARGET_PORT \
     --guard-port $GUARD_PORT \
-    --max-iterations 5"
+    --max-iterations 5 \
+    --max-workers 8"
 
 if [ -n "$LIMIT" ]; then
     REWRITE_CMD="$REWRITE_CMD --limit $LIMIT"
