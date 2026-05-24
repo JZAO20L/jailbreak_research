@@ -39,10 +39,10 @@ from baselines import get_attacker, list_strategies, STRATEGIES
 class VLLMClientWrapper:
     """
     VLLM客户端包装器（仅连接，不启动server）
-    
-    根据反馈memory：不使用model_name参数，只通过port连接
+
+    注意：OpenAI API需要model参数，但我们从server获取实际served的model名称
     """
-    
+
     def __init__(
         self,
         port: int,
@@ -66,26 +66,29 @@ class VLLMClientWrapper:
         self.temperature = temperature
         self.timeout = timeout
         self.max_model_len = max_model_len
-        
+
         # 使用httpx client
         self._http_client = httpx.Client(timeout=self.timeout)
-        
-        # 初始化OpenAI client（不传model_name）
+
+        # 等待server就绪
+        self._wait_for_server()
+
+        # 从server获取model名称（OpenAI API需要）
+        self.model_name = self._get_model_name()
+
+        # 初始化OpenAI client
         from openai import OpenAI
         self.openai_client = OpenAI(
             api_key="EMPTY",
             base_url=self.base_url_v1,
             http_client=self._http_client,
         )
-        
-        # 等待server就绪
-        self._wait_for_server()
-    
+
     def _wait_for_server(self, timeout_s: float = 60.0):
         """等待vLLM server就绪"""
         print(f"[VLLMClientWrapper] Waiting for server on port {self.port}...")
         start_time = time.time()
-        
+
         while True:
             try:
                 r = self._http_client.get(f"{self.base_url}/health")
@@ -94,10 +97,28 @@ class VLLMClientWrapper:
                     return
             except Exception:
                 pass
-            
+
             if time.time() - start_time > timeout_s:
                 raise RuntimeError(f"Server not ready on port {self.port} within {timeout_s}s")
             time.sleep(2)
+
+    def _get_model_name(self) -> str:
+        """从vLLM server获取served model名称"""
+        try:
+            r = self._http_client.get(f"{self.base_url_v1}/models")
+            if r.status_code == 200:
+                models_data = r.json()
+                # vLLM返回格式: {"object": "list", "data": [{"id": "model-name", ...}]}
+                if "data" in models_data and len(models_data["data"]) > 0:
+                    model_id = models_data["data"][0].get("id", "")
+                    print(f"[VLLMClientWrapper] Detected model: {model_id}")
+                    return model_id
+        except Exception as e:
+            print(f"[VLLMClientWrapper] Failed to get model name: {e}")
+
+        # Fallback: 使用默认名称
+        print(f"[VLLMClientWrapper] Using default model name")
+        return "default"
     
     def llm_call(
         self,
@@ -135,10 +156,10 @@ class VLLMClientWrapper:
         else:
             raise ValueError("Either 'prompt' or 'messages' must be provided")
         
-        # 调用OpenAI API（不传model参数）
+        # 调用OpenAI API（使用从server获取的model名称）
         try:
             resp = self.openai_client.chat.completions.create(
-                # 不使用model参数，根据反馈memory
+                model=self.model_name,  # 使用从server获取的model名称
                 messages=final_messages,
                 temperature=temperature if temperature is not None else self.temperature,
                 max_tokens=max_tokens,

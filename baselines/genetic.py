@@ -70,6 +70,16 @@ class GeneticAttacker(BaseAttacker):
         self.crossover_rate = crossover_rate
         self.elite_size = elite_size
 
+    def generate_attack_prompt(self, original_prompt: str) -> str:
+        """
+        Generate attack prompt (placeholder for abstract method).
+        
+        GeneticAttacker uses _generate_with_iterations for actual work,
+        so this method just returns the original prompt.
+        The real attack is performed in attack() which calls _generate_with_iterations.
+        """
+        return original_prompt
+
     def initialize_population(self, original_prompt: str) -> List[str]:
         """Create initial population from original prompt."""
         population = [original_prompt]  # Keep original
