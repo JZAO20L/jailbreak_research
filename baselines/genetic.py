@@ -63,12 +63,26 @@ class GeneticAttacker(BaseAttacker):
             crossover_rate: Probability of crossover
             elite_size: Number of top individuals to keep unchanged
         """
+        # 移除kwargs中可能存在的max_iterations，避免重复传递
+        if 'max_iterations' in kwargs:
+            max_generations = kwargs.pop('max_iterations')
+        
         super().__init__(max_iterations=max_generations, verbose=verbose, **kwargs)
         self.population_size = population_size
         self.max_generations = max_generations
         self.mutation_rate = mutation_rate
         self.crossover_rate = crossover_rate
         self.elite_size = elite_size
+
+    def generate_attack_prompt(self, original_prompt: str) -> str:
+        """
+        Generate attack prompt (placeholder for abstract method).
+        
+        GeneticAttacker uses _generate_with_iterations for actual work,
+        so this method just returns the original prompt.
+        The real attack is performed in attack() which calls _generate_with_iterations.
+        """
+        return original_prompt
 
     def initialize_population(self, original_prompt: str) -> List[str]:
         """Create initial population from original prompt."""

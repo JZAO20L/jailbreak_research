@@ -35,7 +35,7 @@ def _wait_for_http_server(
     t0 = time.time()
     health_url = base_url.rstrip("/") + "/health"
 
-    with httpx.Client(timeout=5.0) as client:
+    with httpx.Client(timeout=5.0, proxy=None) as client:
         while True:
             try:
                 r = client.get(health_url)
@@ -71,16 +71,20 @@ def _terminate_process(proc: subprocess.Popen, grace_s: float = 5.0) -> None:
 class VLLMClient:
     """
     轻量级 vLLM 推理客户端（仅支持 vLLM 后端）
+
+    支持两种模式：
+    1. launch_server=True: 自动启动 vLLM 服务（需要 model_name 和 model_path）
+    2. launch_server=False: 连接已运行的服务（只需 port，自动获取 model_name）
     """
 
     def __init__(
         self,
-        model_name: str,
-        model_path: str,
+        model_name: Optional[str] = None,  # 可选：连接已运行服务时可自动获取
+        model_path: Optional[str] = None,  # 可选：连接已运行服务时不需要
         port: int = 8000,
         temperature: float = 0.7,
         timeout: float = 120.0,
-        launch_server: bool = True,
+        launch_server: bool = False,
         gpu_id: str = "0",
         # ===== vLLM server 核心参数 =====
         host: str = "127.0.0.1",
@@ -98,8 +102,6 @@ class VLLMClient:
         # ===== 额外环境变量 =====
         server_env: Optional[Dict[str, str]] = None,
     ):
-        self.model_name = model_name
-        self.model_path = model_path
         self.temperature = float(temperature)
         self.port = int(port)
         self.timeout = float(timeout)
@@ -114,7 +116,28 @@ class VLLMClient:
         self._log_fh = None
 
         # 用于 OpenAI SDK 的 http client（需要 close）
-        self._http_client = httpx.Client(timeout=self.timeout)
+        # 设置base_url避免环境变量proxy干扰
+        # 使用 trust_env=False 禁用环境变量代理设置
+        self._http_client = httpx.Client(
+            base_url=self.base_url_root,
+            timeout=self.timeout,
+            trust_env=False,
+        )
+
+        # ===== 参数校验 =====
+        if launch_server:
+            # 启动服务模式：必须提供 model_name 和 model_path
+            if not model_name:
+                raise ValueError("launch_server=True 时必须提供 model_name")
+            if not model_path:
+                raise ValueError("launch_server=True 时必须提供 model_path")
+            self.model_name = model_name
+            self.model_path = model_path
+        else:
+            # 连接已运行服务模式：不需要 model_path
+            self.model_path = model_path or ""
+            # model_name 可以稍后自动获取
+            self.model_name = model_name or ""
 
         # ===== 校验/自动调整 GPU ID 数量与 tensor_parallel_size 匹配 =====
         gpu_ids = [x.strip() for x in gpu_id.split(",") if x.strip()]
@@ -219,6 +242,30 @@ class VLLMClient:
             base_url=self.base_url_v1,
             http_client=self._http_client,
         )
+
+        # ===== 连接已运行服务时，自动获取 model_name =====
+        if not launch_server and not self.model_name:
+            self.model_name = self._fetch_model_name_from_server()
+            if not self.model_name:
+                raise RuntimeError(
+                    f"无法从服务器 {self.base_url_v1} 获取 model_name。"
+                    f"请检查服务是否正常运行，或手动指定 model_name 参数。"
+                )
+            print(f"[VLLMClient] Auto-detected model_name: {self.model_name}")
+
+    def _fetch_model_name_from_server(self) -> str:
+        """从已运行的 vLLM 服务获取 model name"""
+        try:
+            resp = self._http_client.get(f"{self.base_url_v1}/models")
+            if resp.status_code == 200:
+                data = resp.json()
+                # vLLM 返回格式: {"data": [{"id": "model_name", ...}]}
+                models = data.get("data", [])
+                if models and len(models) > 0:
+                    return models[0].get("id", "")
+        except Exception as e:
+            print(f"[VLLMClient] Failed to fetch model_name: {e}")
+        return ""
 
     def llm_call(
         self,
@@ -381,7 +428,7 @@ class VLLMClient:
     def health_check(self) -> bool:
         """检查 server 健康状态"""
         try:
-            with httpx.Client(timeout=5.0) as client:
+            with httpx.Client(timeout=5.0, proxy=None) as client:
                 r = client.get(f"{self.base_url_root}/health")
                 return r.status_code == 200
         except Exception:
@@ -434,7 +481,7 @@ if __name__ == "__main__":
     parser.add_argument("--workers", type=int, default=8, help="batch 并发线程数")
     args = parser.parse_args()
 
-    MODEL_PATH = "/home/tiger/models/Qwen3-4B"
+    MODEL_PATH = "/home/tiger/models/Qwen/Qwen3-4B"
     MODEL_NAME = "Qwen3-30B-A3B-Instruct-2507"
 
     print("=" * 70)

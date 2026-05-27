@@ -1,0 +1,18 @@
+{
+  "source": "data/dataset/processed/10k/train.jsonl",
+  "total_size": 1000,
+  "cold_start": {
+    "count": 200,
+    "ratio": 0.2
+  },
+  "evolution": {
+    "count": 600,
+    "ratio": 0.6
+  },
+  "test": {
+    "count": 200,
+    "ratio": 0.2
+  },
+  "random_seed": 42,
+  "deduplicated": true
+}

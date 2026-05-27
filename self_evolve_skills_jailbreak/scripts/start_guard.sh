@@ -4,6 +4,7 @@ export CUDA_VISIBLE_DEVICES=0
 export VLLM_USE_MODELSCOPE=true
 export FLASHINFER_DISABLE_VERSION_CHECK=1
 
+
 MODEL_PATH="/home/tiger/models/Qwen/Qwen3Guard-Gen-4B"
 
 vllm serve ${MODEL_PATH} \

@@ -64,7 +64,7 @@ class PAIRAttacker(BaseAttacker):
 
     def __init__(
         self,
-        max_iterations: int = 20,
+        max_iterations: int = 10,
         attack_temperature: float = 0.7,
         n_streams: int = 1,
         verbose: bool = False,

@@ -107,7 +107,7 @@ class BaseAttacker(ABC):
         if self.guard_client is None:
             raise ValueError("Guard client not set")
 
-        from src.prompts import GUARD_PROMPT
+        from RL4jailbreak.src.prompts import GUARD_PROMPT
 
         messages = [
             {"role": "system", "content": GUARD_PROMPT},
@@ -121,7 +121,7 @@ class BaseAttacker(ABC):
                 max_tokens=256,
                 temperature=0.0,
             )
-            from src.utils import extract_label_categories_refusal
+            from RL4jailbreak.src.utils import extract_label_categories_refusal
             safe_label, categories, refusal = extract_label_categories_refusal(raw)
 
             if refusal and refusal.lower() == "yes":

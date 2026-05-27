@@ -2,21 +2,20 @@
 Baseline Attack Methods for Jailbreak Prompt Synthesis
 
 This module provides various attack strategies for generating jailbreak prompts.
+
+Note: no_rewrite and template_rewrite have been removed.
 """
 
 from .base import BaseAttacker, AttackResult
-from .no_rewrite import NoRewriteAttacker
-from .template_rewrite import TemplateRewriteAttacker
 from .multilingual import MultilingualAttacker, MultilingualEnsembleAttacker
 from .pair import PAIRAttacker
 from .genetic import GeneticAttacker
 from .deepinception import DeepInceptionAttacker, DeepInceptionMultiLayerAttacker, PersonaModulationAttacker
+from .autodan import AutoDANAttacker
 
 __all__ = [
     "BaseAttacker",
     "AttackResult",
-    "NoRewriteAttacker",
-    "TemplateRewriteAttacker",
     "MultilingualAttacker",
     "MultilingualEnsembleAttacker",
     "PAIRAttacker",
@@ -24,12 +23,11 @@ __all__ = [
     "DeepInceptionAttacker",
     "DeepInceptionMultiLayerAttacker",
     "PersonaModulationAttacker",
+    "AutoDANAttacker",
 ]
 
 # Strategy registry
 STRATEGIES = {
-    "no_rewrite": NoRewriteAttacker,
-    "template": TemplateRewriteAttacker,
     "multilingual": MultilingualAttacker,
     "multilingual_ensemble": MultilingualEnsembleAttacker,
     "pair": PAIRAttacker,
@@ -37,6 +35,7 @@ STRATEGIES = {
     "deepinception": DeepInceptionAttacker,
     "deepinception_multilayer": DeepInceptionMultiLayerAttacker,
     "persona": PersonaModulationAttacker,
+    "autodan": AutoDANAttacker,
 }
 
 
