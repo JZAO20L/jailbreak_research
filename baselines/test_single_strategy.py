@@ -187,7 +187,6 @@ class ConcurrentTestRunner:
             统计结果
         """
         n = len(test_prompts)
-        self.stats["total"] = n  # 预设总数
 
         print(f"\n并发配置:")
         print(f"  Workers: {max_workers}")
