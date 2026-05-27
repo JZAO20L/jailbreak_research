@@ -54,7 +54,7 @@ TARGET_TP=2
 # 测试配置
 TEST_FILE="data/dataset/processed/10k/test.jsonl"
 OUTPUT_DIR="experiments/baseline_asr"
-STRATEGIES="pair autodan"  # 默认测试 PAIR 和 AutoDAN
+STRATEGIES="pair autodan genetic deepinception deepinception_multilayer persona"  # 默认测试所有非多语种方法
 LIMIT=""
 MAX_ITERATIONS=10  # 轮次上限
 MAX_WORKERS=8      # 并发数（同时执行的攻击流程数）
