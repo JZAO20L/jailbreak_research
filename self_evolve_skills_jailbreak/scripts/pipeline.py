@@ -66,6 +66,7 @@ class ExperimentConfig:
     UPDATE_STRATEGY: str = "both"  # "success_only" | "failure_only" | "both" | "statistical"
     MIN_SUCCESS_RATE: float = 0.1
     MIN_USAGE: int = 10
+    MAINTENANCE_INTERVAL: int = 100  # 每多少步运行一次维护（删除、合并）
 
     # 数据配置
     COLD_START_DATA_PATH: str = "self_evolve_skills_jailbreak/data/cold_start_prompts.json"
@@ -201,6 +202,10 @@ def phase_cold_start(
         "success": 0,
         "failure": 0,
         "skills_extracted": 0,
+        "steps": 0,  # 步数计数器
+        "maintenance_runs": 0,
+        "skills_pruned": 0,
+        "skills_merged": 0,
     }
     stats_lock = threading.Lock()
     results_list = []
@@ -242,6 +247,7 @@ def phase_cold_start(
 
             # 更新统计（线程安全）
             with stats_lock:
+                stats["steps"] += 1
                 if result.is_success:
                     stats["success"] += 1
                     if suggested_skill:
@@ -254,28 +260,42 @@ def phase_cold_start(
             with results_lock:
                 results_list.append(result)
 
+            # 基于步数的维护（每隔 maintenance_interval 步）
+            with stats_lock:
+                if stats["steps"] > 0 and stats["steps"] % config.MAINTENANCE_INTERVAL == 0:
+                    maintenance_stats = skill_library.run_maintenance(
+                        min_success_rate=config.MIN_SUCCESS_RATE,
+                        min_usage=config.MIN_USAGE,
+                    )
+                    stats["maintenance_runs"] += 1
+                    stats["skills_pruned"] += maintenance_stats["pruned"]
+                    stats["skills_merged"] += maintenance_stats["merged"]
+
             pbar.update(1)
             pbar.set_postfix({
                 "succ": stats["success"],
                 "fail": stats["failure"],
                 "skills": stats["skills_extracted"],
+                "count": skill_library.count(),
             })
 
         pbar.close()
 
-    # 合并去重
-    print("\n[Maintenance] Running skill merge and deduplication...")
-    maintenance_stats = skill_library.run_maintenance(
+    # 最终维护（合并相似，不删除）
+    print("\n[Maintenance] Running final skill merge...")
+    final_maintenance = skill_library.run_maintenance(
         min_success_rate=0.0,  # 冷启动时不删除
         min_usage=1,
     )
-    stats["maintenance"] = maintenance_stats
+    stats["skills_merged"] += final_maintenance["merged"]
     stats["final_skill_count"] = skill_library.count()
 
     print(f"\nCold Start Results:")
     print(f"  Success: {stats['success']}/{stats['total']} ({stats['success']/stats['total']*100:.1f}%)")
     print(f"  Skills extracted: {stats['skills_extracted']}")
-    print(f"  Skills merged: {maintenance_stats['merged']}")
+    print(f"  Intermediate maintenance runs: {stats['maintenance_runs']}")
+    print(f"  Skills pruned: {stats['skills_pruned']}")
+    print(f"  Skills merged: {stats['skills_merged']}")
     print(f"  Final skill count: {stats['final_skill_count']}")
 
     return stats
@@ -421,6 +441,8 @@ def phase_evolution(
         "skills_added": 0,
         "skills_updated": 0,
         "skills_deleted": 0,
+        "skills_merged": 0,
+        "maintenance_runs": 0,
         "intermediate_evals": [],  # 中间评估结果
     }
 
@@ -473,10 +495,21 @@ def phase_evolution(
                         stats["failure"] += 1
                         epoch_stats["failure"] += 1
 
+                    # 基于步数的维护
+                    if stats["total_attempts"] % config.MAINTENANCE_INTERVAL == 0:
+                        maintenance_stats = skill_library.run_maintenance(
+                            min_success_rate=config.MIN_SUCCESS_RATE,
+                            min_usage=config.MIN_USAGE,
+                        )
+                        stats["maintenance_runs"] += 1
+                        stats["skills_deleted"] += maintenance_stats["pruned"]
+                        stats["skills_merged"] += maintenance_stats["merged"]
+
                 pbar.update(1)
                 pbar.set_postfix({
                     "succ": epoch_stats["success"],
                     "fail": epoch_stats["failure"],
+                    "skills": skill_library.count(),
                 })
 
             pbar.close()
@@ -487,21 +520,12 @@ def phase_evolution(
             if result.skill_used:
                 updater.update_stats(result.skill_used, result.is_success)
 
-            # 根据 update_strategy 更新 skills
+            # 根据 update_strategy 更新 skills（增、改）
             if update_strategy != "statistical":
                 updated = updater.update_from_reflection(reflection, result.is_success)
                 if updated:
                     stats["skills_added"] += 1
                     epoch_stats["skills_added"] += 1
-
-        # 统计驱动的维护（每轮结束后）
-        if update_strategy == "statistical" or epoch == num_epochs - 1:
-            maintenance_stats = skill_library.run_maintenance(
-                min_success_rate=config.MIN_SUCCESS_RATE,
-                min_usage=config.MIN_USAGE,
-            )
-            stats["skills_deleted"] += maintenance_stats["pruned"]
-            stats["skills_updated"] += maintenance_stats["merged"]
 
         print(f"Epoch {epoch + 1}: success={epoch_stats['success']}, skills_added={epoch_stats['skills_added']}")
         print(f"Current skill count: {skill_library.count()}")
@@ -526,13 +550,23 @@ def phase_evolution(
             print(f"  Avg iterations: {eval_result['avg_iterations']:.2f}")
             print(f"  Skill count: {eval_result['skill_count']}")
 
+    # 最终维护
+    print("\n[Maintenance] Running final skill cleanup...")
+    final_maintenance = skill_library.run_maintenance(
+        min_success_rate=config.MIN_SUCCESS_RATE,
+        min_usage=config.MIN_USAGE,
+    )
+    stats["skills_deleted"] += final_maintenance["pruned"]
+    stats["skills_merged"] += final_maintenance["merged"]
     stats["final_skill_count"] = skill_library.count()
 
     print(f"\nEvolution Results:")
     print(f"  Total attempts: {stats['total_attempts']}")
     print(f"  Success rate: {stats['success']/stats['total_attempts']*100:.1f}%")
     print(f"  Skills added: {stats['skills_added']}")
-    print(f"  Skills deleted: {stats['skills_deleted']}")
+    print(f"  Maintenance runs: {stats['maintenance_runs']}")
+    print(f"  Skills pruned: {stats['skills_deleted']}")
+    print(f"  Skills merged: {stats['skills_merged']}")
     print(f"  Final skill count: {stats['final_skill_count']}")
 
     return stats
@@ -846,6 +880,7 @@ def main():
     # 维护参数
     parser.add_argument("--min_success_rate", type=float, default=0.1, help="低效 skill 清理阈值")
     parser.add_argument("--min_usage", type=int, default=10, help="最小使用次数阈值")
+    parser.add_argument("--maintenance_interval", type=int, default=100, help="每多少步运行一次维护（删除、合并）")
 
     args = parser.parse_args()
 
@@ -861,6 +896,7 @@ def main():
         SKILL_SWITCH_THRESHOLD=args.skill_switch_threshold,
         MIN_SUCCESS_RATE=args.min_success_rate,
         MIN_USAGE=args.min_usage,
+        MAINTENANCE_INTERVAL=args.maintenance_interval,
     )
 
     # 运行
