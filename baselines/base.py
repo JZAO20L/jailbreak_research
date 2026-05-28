@@ -103,14 +103,13 @@ class BaseAttacker(ABC):
         return response
 
     def get_guard_label(self, attack_prompt: str, response: str) -> str:
-        """Get label from guard model."""
+        """Get label from guard model (官方用法)."""
         if self.guard_client is None:
             raise ValueError("Guard client not set")
 
-        from RL4jailbreak.src.prompts import GUARD_PROMPT
-
+        # Qwen3Guard 官方用法：直接使用 [user, assistant] messages
+        # 不需要额外的 system prompt，模型有内置的 chat template
         messages = [
-            {"role": "system", "content": GUARD_PROMPT},
             {"role": "user", "content": attack_prompt},
             {"role": "assistant", "content": response},
         ]
@@ -118,7 +117,7 @@ class BaseAttacker(ABC):
         try:
             raw = self.guard_client.llm_call(
                 messages=messages,
-                max_tokens=256,
+                max_tokens=128,
                 temperature=0.0,
             )
             from RL4jailbreak.src.utils import extract_label_categories_refusal
