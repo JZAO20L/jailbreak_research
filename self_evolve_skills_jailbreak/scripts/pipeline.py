@@ -709,9 +709,21 @@ def run_full_pipeline(
         eval_prompts = random.sample(test_prompts, min(eval_limit, len(test_prompts)))
         print(f"  Intermediate eval prompts: {len(eval_prompts)}")
 
-    # 初始化 skill library
+    # 构建实验特定的 skills 目录
+    exp_name = f"{skill_call_mode}_{skill_extraction_mode}_{update_strategy}"
+    if output_dir:
+        skills_dir = os.path.join(output_dir, "skills")
+        os.makedirs(skills_dir, exist_ok=True)
+        skills_path = os.path.join(skills_dir, f"skills_{exp_name}.json")
+    else:
+        # 默认使用项目根目录下的 skills 目录
+        skills_path = f"self_evolve_skills_jailbreak/skills/skills_{exp_name}.json"
+
+    print(f"  Skills path: {skills_path}")
+
+    # 初始化 skill library（每个实验独立）
     skill_library = SkillLibrary(
-        storage_path=config.SKILL_LIBRARY_PATH,
+        storage_path=skills_path,
         max_skills=config.MAX_SKILLS,
     )
 
@@ -761,6 +773,7 @@ def run_full_pipeline(
             "skill_call_mode": skill_call_mode,
             "skill_extraction_mode": skill_extraction_mode,
             "update_strategy": update_strategy,
+            "skills_path": skills_path,
         },
         "cold_start": cold_start_stats,
         "evolution": evolution_stats,
