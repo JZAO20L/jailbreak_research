@@ -194,9 +194,10 @@ def phase_cold_start(
         "skills_extracted": 0,
     }
 
-    # 攻击循环
+    # 攻击循环（带进度条）
     results = []
-    for prompt in tqdm(seed_prompts, desc="Cold Start"):
+    pbar = tqdm(seed_prompts, desc="Cold Start", unit="prompt")
+    for prompt in pbar:
         # 攻击
         result = attacker.attack(prompt, retrieve_top_k=config.RETRIEVE_TOP_K)
 
@@ -221,6 +222,13 @@ def phase_cold_start(
             stats["failure"] += 1
 
         results.append(result)
+
+        # 更新进度条信息
+        pbar.set_postfix({
+            "succ": stats["success"],
+            "fail": stats["failure"],
+            "skills": stats["skills_extracted"],
+        })
 
     # 合并去重
     print("\n[Maintenance] Running skill merge and deduplication...")
@@ -277,7 +285,7 @@ def intermediate_eval(
         "total_iterations": 0,
     }
 
-    for prompt in eval_prompts:
+    for prompt in tqdm(eval_prompts, desc="Eval", unit="prompt", leave=False):
         result = attacker.attack(prompt, retrieve_top_k=config.RETRIEVE_TOP_K)
         stats["total_iterations"] += result.iterations
         if result.is_success:
@@ -369,7 +377,8 @@ def phase_evolution(
             "skills_added": 0,
         }
 
-        for prompt in tqdm(seed_prompts, desc=f"Epoch {epoch + 1}"):
+        pbar = tqdm(seed_prompts, desc=f"Epoch {epoch + 1}", unit="prompt")
+        for prompt in pbar:
             stats["total_attempts"] += 1
 
             # 攻击
@@ -407,6 +416,13 @@ def phase_evolution(
                 if updated:
                     stats["skills_added"] += 1
                     epoch_stats["skills_added"] += 1
+
+            # 更新进度条信息
+            pbar.set_postfix({
+                "succ": epoch_stats["success"],
+                "fail": epoch_stats["failure"],
+                "skills": epoch_stats["skills_added"],
+            })
 
         # 统计驱动的维护（每轮结束后）
         if update_strategy == "statistical" or epoch == num_epochs - 1:
@@ -497,16 +513,21 @@ def phase_test(
         "results": [],
     }
 
-    for prompt in tqdm(test_prompts, desc="Test"):
+    pbar = tqdm(test_prompts, desc="Test")
+    succ, fail = 0, 0
+    for prompt in pbar:
         result = attacker.attack(prompt, retrieve_top_k=config.RETRIEVE_TOP_K)
 
         if result.is_success:
             stats["success"] += 1
+            succ += 1
         else:
             stats["failure"] += 1
+            fail += 1
 
         stats["total_iterations"] += result.iterations
         stats["results"].append(result)
+        pbar.set_postfix(succ=succ, fail=fail, iter=result.iterations)
 
     # 计算指标
     asr = stats["success"] / stats["total"]

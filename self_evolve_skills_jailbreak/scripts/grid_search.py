@@ -133,22 +133,33 @@ def run_single_experiment(
         if value is not None:
             cmd.extend([f"--{key}", str(value)])
 
-    # 运行实验
+    # 运行实验（实时输出）
     start_time = time.time()
 
     try:
-        result = subprocess.run(
+        # 使用 Popen 实时显示输出
+        process = subprocess.Popen(
             cmd,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=3600 * 2,  # 2小时超时
+            bufsize=1,  # 行缓冲
         )
 
-        success = result.returncode == 0
-        stdout = result.stdout
-        stderr = result.stderr
+        # 实时读取并显示输出
+        stdout_lines = []
+        for line in process.stdout:
+            print(line, end='')  # 实时显示
+            stdout_lines.append(line)
+
+        process.wait(timeout=3600 * 2)  # 2小时超时
+
+        success = process.returncode == 0
+        stdout = ''.join(stdout_lines)
+        stderr = ""
 
     except subprocess.TimeoutExpired:
+        process.kill()
         success = False
         stdout = ""
         stderr = "Timeout expired"
