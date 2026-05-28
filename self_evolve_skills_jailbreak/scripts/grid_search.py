@@ -411,9 +411,11 @@ def main():
     # 基础参数
     parser.add_argument("--test_limit", type=int, default=None, help="测试数据限制（默认使用全部）")
     parser.add_argument("--eval_limit", type=int, default=100, help="中间评估数据数量")
-    parser.add_argument("--num_epochs", type=int, default=3, help="进化轮数")
+    parser.add_argument("--num_epochs", type=int, default=1, help="进化轮数（快速验证用 1，完整实验用 3）")
     parser.add_argument("--max_iterations", type=int, default=10, help="最大攻击迭代次数")
     parser.add_argument("--max_workers", type=int, default=8, help="轨迹级并发数")
+    parser.add_argument("--min_success_rate", type=float, default=0.8, help="低效 skill 清理阈值")
+    parser.add_argument("--maintenance_interval", type=int, default=100, help="维护间隔步数")
 
     # 服务参数
     parser.add_argument("--guard_port", type=int, default=8002)
@@ -435,6 +437,8 @@ def main():
         "num_epochs": args.num_epochs,
         "max_iterations": args.max_iterations,
         "max_workers": args.max_workers,
+        "min_success_rate": args.min_success_rate,
+        "maintenance_interval": args.maintenance_interval,
         "guard_port": args.guard_port,
         "target_port": args.target_port,
     }

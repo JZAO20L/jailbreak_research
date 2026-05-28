@@ -60,9 +60,11 @@ GPU_MEMORY_UTIL=0.9
 # Test: test_prompts.json (1000 条)
 TEST_LIMIT=      # Test 数据量限制（默认使用全部）
 EVAL_LIMIT=100      # 中间评估数据量
-NUM_EPOCHS=3        # 进化轮数
+NUM_EPOCHS=1        # 进化轮数（快速验证）
 MAX_ITERATIONS=10   # 最大攻击迭代次数
 MAX_WORKERS=8       # 轨迹级并发数
+MIN_SUCCESS_RATE=0.8  # Skills 清理阈值（严格筛选）
+MAINTENANCE_INTERVAL=100  # 维护间隔步数
 
 # 日志目录
 LOG_DIR="$EXP_DIR/logs"
@@ -98,6 +100,14 @@ while [[ $# -gt 0 ]]; do
             MAX_WORKERS="$2"
             shift 2
             ;;
+        --min_success_rate)
+            MIN_SUCCESS_RATE="$2"
+            shift 2
+            ;;
+        --maintenance_interval)
+            MAINTENANCE_INTERVAL="$2"
+            shift 2
+            ;;
         --skip_launch)
             SKIP_LAUNCH=true
             shift
@@ -120,7 +130,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: bash run_layer1.sh [--test_limit N] [--eval_limit N] [--num_epochs N] [--skip_launch] [--resume_from N] [--single CALL_MODE EXTRACTION_MODE UPDATE_STRATEGY]"
+            echo "Usage: bash run_layer1.sh [--test_limit N] [--eval_limit N] [--num_epochs N] [--max_workers N] [--min_success_rate F] [--skip_launch] [--resume_from N] [--single CALL_MODE EXTRACTION_MODE UPDATE_STRATEGY]"
             exit 1
             ;;
     esac
@@ -261,6 +271,8 @@ echo "  Eval Limit: $EVAL_LIMIT"
 echo "  Epochs: $NUM_EPOCHS"
 echo "  Max Iterations: $MAX_ITERATIONS"
 echo "  Max Workers: $MAX_WORKERS"
+echo "  Min Success Rate: $MIN_SUCCESS_RATE"
+echo "  Maintenance Interval: $MAINTENANCE_INTERVAL"
 if [ -n "$TEST_LIMIT" ]; then
     echo "  Test Limit: $TEST_LIMIT"
 fi
@@ -282,6 +294,13 @@ cd "$PROJECT_ROOT"
 GRID_SEARCH_CMD="python self_evolve_skills_jailbreak/scripts/grid_search.py \
     --eval_limit $EVAL_LIMIT \
     --num_epochs $NUM_EPOCHS \
+    --max_iterations $MAX_ITERATIONS \
+    --max_workers $MAX_WORKERS \
+    --min_success_rate $MIN_SUCCESS_RATE \
+    --maintenance_interval $MAINTENANCE_INTERVAL \
+    --output_dir $RESULT_DIR \
+    --guard_port $GUARD_PORT \
+    --target_port $TARGET_PORT"
     --max_iterations $MAX_ITERATIONS \
     --max_workers $MAX_WORKERS \
     --output_dir $RESULT_DIR \
