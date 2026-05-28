@@ -16,9 +16,11 @@ import sys
 import json
 import time
 import argparse
+import threading
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from tqdm import tqdm
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # 添加项目路径
 PROJECT_ROOT = Path(__file__).parent.parent.parent
@@ -53,6 +55,9 @@ class ExperimentConfig:
     MAX_SKILLS: int = 100
     RETRIEVE_TOP_K: int = 3
     SKILL_SWITCH_THRESHOLD: int = 3  # 连续失败多少次后切换 skill
+
+    # 并发配置
+    MAX_WORKERS: int = 8  # 轨迹级并发数
 
     # 攻击配置
     MAX_ITERATIONS: int = 10
@@ -151,6 +156,7 @@ def phase_cold_start(
     config: ExperimentConfig,
     skill_call_mode: str = "single_call",
     skill_extraction_mode: str = "final_prompt",  # "final_prompt" | "trajectory"
+    max_workers: int = 8,
     verbose: bool = True,
 ) -> Dict:
     """
@@ -159,6 +165,7 @@ def phase_cold_start(
     Args:
         skill_call_mode: "single_call" | "every_iteration"
         skill_extraction_mode: "final_prompt" | "trajectory"
+        max_workers: 轨迹级并发数
 
     Returns:
         统计信息
@@ -169,6 +176,7 @@ def phase_cold_start(
     print(f"Seed prompts: {len(seed_prompts)}")
     print(f"Skill call mode: {skill_call_mode}")
     print(f"Skill extraction mode: {skill_extraction_mode}")
+    print(f"Max workers: {max_workers}")
 
     # 初始化组件
     attacker = SkillGuidedAttacker(
@@ -187,24 +195,23 @@ def phase_cold_start(
         verbose=False,
     )
 
-    # 统计
+    # 统计（使用线程安全的计数器）
     stats = {
         "total": len(seed_prompts),
         "success": 0,
         "failure": 0,
         "skills_extracted": 0,
     }
+    stats_lock = threading.Lock()
+    results_list = []
+    results_lock = threading.Lock()
 
-    # 攻击循环（带进度条）
-    results = []
-    pbar = tqdm(seed_prompts, desc="Cold Start", unit="prompt")
-    for prompt in pbar:
-        # 攻击
+    def run_single_trajectory(prompt: str) -> Tuple[str, AttackResult, Optional[Skill]]:
+        """运行单个攻击轨迹"""
         result = attacker.attack(prompt, retrieve_top_k=config.RETRIEVE_TOP_K)
+        suggested_skill = None
 
         if result.is_success:
-            stats["success"] += 1
-
             # 提取 skill
             trajectory = result.intermediate_results if skill_extraction_mode == "trajectory" else None
             reflection = reflector.reflect_success(
@@ -216,20 +223,45 @@ def phase_cold_start(
             )
 
             if reflection.should_update and reflection.suggested_skill:
-                added = skill_library.add_skill(reflection.suggested_skill)
-                if added:
-                    stats["skills_extracted"] += 1
-        else:
-            stats["failure"] += 1
+                suggested_skill = reflection.suggested_skill
 
-        results.append(result)
+        return prompt, result, suggested_skill
 
-        # 更新进度条信息
-        pbar.set_postfix({
-            "succ": stats["success"],
-            "fail": stats["failure"],
-            "skills": stats["skills_extracted"],
-        })
+    # 并发执行
+    print(f"\nRunning {len(seed_prompts)} trajectories with {max_workers} workers...")
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        # 提交所有任务
+        futures = {executor.submit(run_single_trajectory, prompt): prompt for prompt in seed_prompts}
+
+        # 使用进度条收集结果
+        pbar = tqdm(total=len(seed_prompts), desc="Cold Start", unit="prompt")
+
+        for future in as_completed(futures):
+            prompt, result, suggested_skill = future.result()
+
+            # 更新统计（线程安全）
+            with stats_lock:
+                if result.is_success:
+                    stats["success"] += 1
+                    if suggested_skill:
+                        added = skill_library.add_skill(suggested_skill)
+                        if added:
+                            stats["skills_extracted"] += 1
+                else:
+                    stats["failure"] += 1
+
+            with results_lock:
+                results_list.append(result)
+
+            pbar.update(1)
+            pbar.set_postfix({
+                "succ": stats["success"],
+                "fail": stats["failure"],
+                "skills": stats["skills_extracted"],
+            })
+
+        pbar.close()
 
     # 合并去重
     print("\n[Maintenance] Running skill merge and deduplication...")
@@ -260,12 +292,14 @@ def intermediate_eval(
     skill_library: SkillLibrary,
     config: ExperimentConfig,
     skill_call_mode: str,
+    max_workers: int = 8,
 ) -> Dict:
     """
     中间评估：在进化过程中快速评估 Skills 效果
 
     Args:
         eval_prompts: 评估用的 prompts（一小部分 test 集）
+        max_workers: 并发数
 
     Returns:
         评估结果（ASR, avg_iterations 等）
@@ -280,17 +314,35 @@ def intermediate_eval(
         verbose=False,
     )
 
+    stats_lock = threading.Lock()
     stats = {
         "total": len(eval_prompts),
         "success": 0,
         "total_iterations": 0,
     }
 
-    for prompt in tqdm(eval_prompts, desc="Eval", unit="prompt", leave=False):
+    def run_eval(prompt: str) -> Tuple[bool, int]:
+        """运行单个评估"""
         result = attacker.attack(prompt, retrieve_top_k=config.RETRIEVE_TOP_K)
-        stats["total_iterations"] += result.iterations
-        if result.is_success:
-            stats["success"] += 1
+        return result.is_success, result.iterations
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(run_eval, prompt): prompt for prompt in eval_prompts}
+
+        pbar = tqdm(total=len(eval_prompts), desc="Eval", unit="prompt", leave=False)
+        succ = 0
+
+        for future in as_completed(futures):
+            is_success, iterations = future.result()
+            with stats_lock:
+                if is_success:
+                    stats["success"] += 1
+                    succ += 1
+                stats["total_iterations"] += iterations
+            pbar.update(1)
+            pbar.set_postfix(succ=succ)
+
+        pbar.close()
 
     stats["asr"] = stats["success"] / stats["total"] if stats["total"] > 0 else 0
     stats["avg_iterations"] = stats["total_iterations"] / stats["total"] if stats["total"] > 0 else 0
@@ -308,16 +360,18 @@ def phase_evolution(
     update_strategy: str = "both",  # "success_only" | "failure_only" | "both" | "statistical"
     num_epochs: int = 3,
     eval_prompts: List[str] = None,  # 中间评估用的 prompts
+    max_workers: int = 8,
     verbose: bool = True,
 ) -> Dict:
     """
-    进化阶段：攻击 → 反思 → 更新 skills
+    进化阶段：攻击 → 反思 → 更新 skills（并发执行）
 
     Args:
         skill_call_mode: "single_call" | "every_iteration"
         update_strategy: Skill 更新策略
         num_epochs: 进化轮数
         eval_prompts: 中间评估用的 prompts（可选）
+        max_workers: 轨迹级并发数
 
     Returns:
         统计信息
@@ -329,6 +383,7 @@ def phase_evolution(
     print(f"Skill call mode: {skill_call_mode}")
     print(f"Update strategy: {update_strategy}")
     print(f"Epochs: {num_epochs}")
+    print(f"Max workers: {max_workers}")
     if eval_prompts:
         print(f"Intermediate eval: {len(eval_prompts)} prompts per epoch")
 
@@ -369,6 +424,20 @@ def phase_evolution(
         "intermediate_evals": [],  # 中间评估结果
     }
 
+    def run_single_trajectory(prompt: str) -> Tuple[str, AttackResult, ReflectionResult]:
+        """运行单个攻击轨迹"""
+        result = attacker.attack(prompt, retrieve_top_k=config.RETRIEVE_TOP_K)
+        reflection = reflector.reflect_both(
+            original_prompt=prompt,
+            attack_prompt=result.attack_prompt,
+            target_response=result.target_response,
+            skill_used=result.skill_used,
+            iterations=result.iterations,
+            is_success=result.is_success,
+            trajectory=result.intermediate_results,
+        )
+        return prompt, result, reflection
+
     for epoch in range(num_epochs):
         print(f"\n--- Epoch {epoch + 1}/{num_epochs} ---")
 
@@ -378,38 +447,45 @@ def phase_evolution(
             "skills_added": 0,
         }
 
-        pbar = tqdm(seed_prompts, desc=f"Epoch {epoch + 1}", unit="prompt")
-        for prompt in pbar:
-            stats["total_attempts"] += 1
+        stats_lock = threading.Lock()
+        trajectory_results = []
+        results_lock = threading.Lock()
 
-            # 攻击
-            result = attacker.attack(prompt, retrieve_top_k=config.RETRIEVE_TOP_K)
+        # 并发执行所有轨迹
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(run_single_trajectory, prompt): prompt for prompt in seed_prompts}
 
-            # 反思
-            reflection = reflector.reflect_both(
-                original_prompt=prompt,
-                attack_prompt=result.attack_prompt,
-                target_response=result.target_response,
-                skill_used=result.skill_used,
-                iterations=result.iterations,
-                is_success=result.is_success,
-                trajectory=result.intermediate_results,
-            )
+            pbar = tqdm(total=len(seed_prompts), desc=f"Epoch {epoch + 1}", unit="prompt")
 
-            # 更新统计
-            if result.is_success:
-                stats["success"] += 1
-                epoch_stats["success"] += 1
+            for future in as_completed(futures):
+                prompt, result, reflection = future.result()
 
-                # 更新 skill 统计
-                if result.skill_used:
-                    updater.update_stats(result.skill_used, True)
-            else:
-                stats["failure"] += 1
-                epoch_stats["failure"] += 1
+                # 收集结果（先不更新 skill，等收集完统一处理）
+                with results_lock:
+                    trajectory_results.append((prompt, result, reflection))
 
-                if result.skill_used:
-                    updater.update_stats(result.skill_used, False)
+                with stats_lock:
+                    stats["total_attempts"] += 1
+                    if result.is_success:
+                        stats["success"] += 1
+                        epoch_stats["success"] += 1
+                    else:
+                        stats["failure"] += 1
+                        epoch_stats["failure"] += 1
+
+                pbar.update(1)
+                pbar.set_postfix({
+                    "succ": epoch_stats["success"],
+                    "fail": epoch_stats["failure"],
+                })
+
+            pbar.close()
+
+        # 批量更新 skills（轨迹完成后统一处理）
+        for prompt, result, reflection in trajectory_results:
+            # 更新 skill 统计
+            if result.skill_used:
+                updater.update_stats(result.skill_used, result.is_success)
 
             # 根据 update_strategy 更新 skills
             if update_strategy != "statistical":
@@ -417,13 +493,6 @@ def phase_evolution(
                 if updated:
                     stats["skills_added"] += 1
                     epoch_stats["skills_added"] += 1
-
-            # 更新进度条信息
-            pbar.set_postfix({
-                "succ": epoch_stats["success"],
-                "fail": epoch_stats["failure"],
-                "skills": epoch_stats["skills_added"],
-            })
 
         # 统计驱动的维护（每轮结束后）
         if update_strategy == "statistical" or epoch == num_epochs - 1:
@@ -447,6 +516,7 @@ def phase_evolution(
                 skill_library=skill_library,
                 config=config,
                 skill_call_mode=skill_call_mode,
+                max_workers=max_workers,
             )
             eval_result["epoch"] = epoch + 1
             eval_result["skill_count"] = skill_library.count()
@@ -479,10 +549,14 @@ def phase_test(
     skill_library: SkillLibrary,
     config: ExperimentConfig,
     skill_call_mode: str = "single_call",
+    max_workers: int = 8,
     verbose: bool = True,
 ) -> Dict:
     """
-    测试阶段：固定 skills，统计 ASR 和平均轮次
+    测试阶段：固定 skills，统计 ASR 和平均轮次（并发执行）
+
+    Args:
+        max_workers: 并发数
 
     Returns:
         测试结果统计
@@ -493,6 +567,7 @@ def phase_test(
     print(f"Test prompts: {len(test_prompts)}")
     print(f"Skill call mode: {skill_call_mode}")
     print(f"Fixed skill count: {skill_library.count()}")
+    print(f"Max workers: {max_workers}")
 
     # 初始化攻击器（固定 skills，不更新）
     attacker = SkillGuidedAttacker(
@@ -505,7 +580,8 @@ def phase_test(
         verbose=False,
     )
 
-    # 统计
+    # 统计（线程安全）
+    stats_lock = threading.Lock()
     stats = {
         "total": len(test_prompts),
         "success": 0,
@@ -513,22 +589,39 @@ def phase_test(
         "total_iterations": 0,
         "results": [],
     }
+    results_lock = threading.Lock()
 
-    pbar = tqdm(test_prompts, desc="Test")
-    succ, fail = 0, 0
-    for prompt in pbar:
+    def run_test(prompt: str) -> Tuple[AttackResult, bool, int]:
+        """运行单个测试"""
         result = attacker.attack(prompt, retrieve_top_k=config.RETRIEVE_TOP_K)
+        return result, result.is_success, result.iterations
 
-        if result.is_success:
-            stats["success"] += 1
-            succ += 1
-        else:
-            stats["failure"] += 1
-            fail += 1
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(run_test, prompt): prompt for prompt in test_prompts}
 
-        stats["total_iterations"] += result.iterations
-        stats["results"].append(result)
-        pbar.set_postfix(succ=succ, fail=fail, iter=result.iterations)
+        pbar = tqdm(total=len(test_prompts), desc="Test")
+        succ = 0
+        fail = 0
+
+        for future in as_completed(futures):
+            result, is_success, iterations = future.result()
+
+            with stats_lock:
+                if is_success:
+                    stats["success"] += 1
+                    succ += 1
+                else:
+                    stats["failure"] += 1
+                    fail += 1
+                stats["total_iterations"] += iterations
+
+            with results_lock:
+                stats["results"].append(result)
+
+            pbar.update(1)
+            pbar.set_postfix(succ=succ, fail=fail)
+
+        pbar.close()
 
     # 计算指标
     asr = stats["success"] / stats["total"]
@@ -557,17 +650,21 @@ def run_full_pipeline(
     num_epochs: int = 3,
     test_limit: Optional[int] = None,
     eval_limit: int = 100,  # 中间评估数据数量（0 表示不评估）
+    max_workers: int = 8,  # 轨迹级并发数
     output_dir: Optional[str] = None,  # 结果输出目录
     skip_launch: bool = False,
     verbose: bool = True,
 ):
     """
-    运行完整三阶段流程
+    运行完整三阶段流程（并发执行）
 
     数据来源：
     - Cold Start: 使用 self_evolve_skills_jailbreak/data/cold_start_prompts.json (默认 200 条)
     - Evolution: 使用 self_evolve_skills_jailbreak/data/evolution_prompts.json (默认 800 条)
     - Test: 使用 self_evolve_skills_jailbreak/data/test_prompts.json (默认 1000 条)
+
+    Args:
+        max_workers: 轨迹级并发数（每个攻击轨迹并发运行）
     """
     print("=" * 60)
     print("Self Evolve Skills for Jailbreak")
@@ -576,6 +673,7 @@ def run_full_pipeline(
     print(f"Skill extraction mode: {skill_extraction_mode}")
     print(f"Update strategy: {update_strategy}")
     print(f"Eval limit: {eval_limit} (intermediate eval)")
+    print(f"Max workers: {max_workers} (trajectory concurrency)")
 
     # 初始化 clients
     if not skip_launch:
@@ -626,6 +724,7 @@ def run_full_pipeline(
         config=config,
         skill_call_mode=skill_call_mode,
         skill_extraction_mode=skill_extraction_mode,
+        max_workers=max_workers,
         verbose=verbose,
     )
 
@@ -640,6 +739,7 @@ def run_full_pipeline(
         update_strategy=update_strategy,
         num_epochs=num_epochs,
         eval_prompts=eval_prompts,  # 中间评估
+        max_workers=max_workers,
         verbose=verbose,
     )
 
@@ -651,6 +751,7 @@ def run_full_pipeline(
         skill_library=skill_library,
         config=config,
         skill_call_mode=skill_call_mode,
+        max_workers=max_workers,
         verbose=verbose,
     )
 
@@ -713,6 +814,7 @@ def main():
     # 训练参数
     parser.add_argument("--num_epochs", type=int, default=3, help="进化轮数")
     parser.add_argument("--max_iterations", type=int, default=10, help="最大攻击迭代次数")
+    parser.add_argument("--max_workers", type=int, default=8, help="轨迹级并发数")
     parser.add_argument("--test_limit", type=int, default=None, help="测试数据限制（默认使用全部）")
     parser.add_argument("--eval_limit", type=int, default=100, help="中间评估数据数量（0 表示不评估）")
     parser.add_argument("--output_dir", type=str, default=None, help="结果输出目录")
@@ -739,6 +841,7 @@ def main():
         GUARD_PORT=args.guard_port,
         TARGET_PORT=args.target_port,
         MAX_ITERATIONS=args.max_iterations,
+        MAX_WORKERS=args.max_workers,
         SKILL_LIBRARY_PATH=args.skill_library_path,
         MAX_SKILLS=args.max_skills,
         RETRIEVE_TOP_K=args.retrieve_top_k,
@@ -756,6 +859,7 @@ def main():
         num_epochs=args.num_epochs,
         test_limit=args.test_limit,
         eval_limit=args.eval_limit,
+        max_workers=args.max_workers,
         output_dir=args.output_dir,
         skip_launch=args.skip_launch,
     )

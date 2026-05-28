@@ -7,6 +7,7 @@ Skill的存储、检索、聚类等核心操作
 import os
 import json
 import uuid
+import threading
 from datetime import datetime
 from typing import List, Dict, Optional, Tuple
 from collections import defaultdict
@@ -24,6 +25,8 @@ class SkillLibrary:
     - Skill检索
     - Skill聚类
     - Skill合并
+
+    线程安全：使用锁保护文件写入操作
     """
 
     def __init__(
@@ -37,6 +40,7 @@ class SkillLibrary:
         self.max_skills = max_skills
         self.similarity_threshold = similarity_threshold
         self.max_skill_length = max_skill_length
+        self._lock = threading.Lock()  # 线程安全锁
 
         self.skills: Dict[str, Skill] = {}
         self._load()
@@ -81,7 +85,7 @@ class SkillLibrary:
 
     def add_skill(self, skill: Skill) -> bool:
         """
-        添加新Skill
+        添加新Skill（线程安全）
 
         Args:
             skill: 要添加的Skill
@@ -89,36 +93,39 @@ class SkillLibrary:
         Returns:
             是否成功添加
         """
-        if not skill.is_valid():
-            return False
-
-        # 检查是否已存在相似Skill
-        for existing in self.skills.values():
-            if self._compute_similarity(skill.content, existing.content) > 0.9:
-                # 太相似，不添加
+        with self._lock:
+            if not skill.is_valid():
                 return False
 
-        self.skills[skill.skill_id] = skill
-        self._save()
-        return True
+            # 检查是否已存在相似Skill
+            for existing in self.skills.values():
+                if self._compute_similarity(skill.content, existing.content) > 0.9:
+                    # 太相似，不添加
+                    return False
+
+            self.skills[skill.skill_id] = skill
+            self._save()
+            return True
 
     def get_skill(self, skill_id: str) -> Optional[Skill]:
         """获取指定Skill"""
         return self.skills.get(skill_id)
 
     def update_skill(self, skill: Skill):
-        """更新Skill"""
-        if skill.skill_id in self.skills:
-            self.skills[skill.skill_id] = skill
-            self._save()
+        """更新Skill（线程安全）"""
+        with self._lock:
+            if skill.skill_id in self.skills:
+                self.skills[skill.skill_id] = skill
+                self._save()
 
     def remove_skill(self, skill_id: str) -> bool:
-        """删除Skill"""
-        if skill_id in self.skills:
-            del self.skills[skill_id]
-            self._save()
-            return True
-        return False
+        """删除Skill（线程安全）"""
+        with self._lock:
+            if skill_id in self.skills:
+                del self.skills[skill_id]
+                self._save()
+                return True
+            return False
 
     def list_skills(self) -> List[Skill]:
         """列出所有Skills"""
@@ -269,7 +276,7 @@ class SkillLibrary:
 
     def merge_cluster(self, cluster_id: str, skill_ids: List[str]) -> Optional[Skill]:
         """
-        合并一个聚类中的Skills
+        合并一个聚类中的Skills（线程安全）
 
         策略：保留质量最高的Skill，合并统计信息
 
@@ -280,34 +287,39 @@ class SkillLibrary:
         Returns:
             合并后的Skill
         """
-        if len(skill_ids) <= 1:
-            return None
+        with self._lock:
+            if len(skill_ids) <= 1:
+                return None
 
-        # 找到质量最高的Skill作为主Skill
-        skills = [self.skills[sid] for sid in skill_ids]
-        best_skill = max(skills, key=lambda s: s.quality_score)
+            # 找到质量最高的Skill作为主Skill
+            skills = [self.skills[sid] for sid in skill_ids if sid in self.skills]
+            if len(skills) <= 1:
+                return None
 
-        # 合并其他Skill的统计信息
-        for skill in skills:
-            if skill.skill_id != best_skill.skill_id:
-                best_skill.usage_count += skill.usage_count
-                best_skill.success_count += skill.success_count
-                # 合并适用模式
-                for p in skill.applicable_patterns:
-                    if p not in best_skill.applicable_patterns:
-                        best_skill.applicable_patterns.append(p)
-                # 合并父IDs
-                for pid in skill.parent_ids:
-                    if pid not in best_skill.parent_ids:
-                        best_skill.parent_ids.append(pid)
-                # 删除被合并的Skill
-                del self.skills[skill.skill_id]
+            best_skill = max(skills, key=lambda s: s.quality_score)
 
-        best_skill.source = "merged"
-        best_skill._update_quality()
-        self._save()
+            # 合并其他Skill的统计信息
+            for skill in skills:
+                if skill.skill_id != best_skill.skill_id:
+                    best_skill.usage_count += skill.usage_count
+                    best_skill.success_count += skill.success_count
+                    # 合并适用模式
+                    for p in skill.applicable_patterns:
+                        if p not in best_skill.applicable_patterns:
+                            best_skill.applicable_patterns.append(p)
+                    # 合并父IDs
+                    for pid in skill.parent_ids:
+                        if pid not in best_skill.parent_ids:
+                            best_skill.parent_ids.append(pid)
+                    # 删除被合并的Skill
+                    if skill.skill_id in self.skills:
+                        del self.skills[skill.skill_id]
 
-        return best_skill
+            best_skill.source = "merged"
+            best_skill._update_quality()
+            self._save()
+
+            return best_skill
 
     # =========================================================================
     # 维护
@@ -315,65 +327,68 @@ class SkillLibrary:
 
     def prune_low_quality(self, min_success_rate: float = 0.1, min_usage: int = 10) -> int:
         """
-        清理低效Skills
+        清理低效Skills（线程安全）
 
         Returns:
             删除的数量
         """
-        to_remove = []
-        for skill_id, skill in self.skills.items():
-            if skill.is_low_quality(min_success_rate, min_usage):
-                to_remove.append(skill_id)
+        with self._lock:
+            to_remove = []
+            for skill_id, skill in self.skills.items():
+                if skill.is_low_quality(min_success_rate, min_usage):
+                    to_remove.append(skill_id)
 
-        for skill_id in to_remove:
-            del self.skills[skill_id]
+            for skill_id in to_remove:
+                del self.skills[skill_id]
 
-        if to_remove:
-            self._save()
+            if to_remove:
+                self._save()
 
-        return len(to_remove)
+            return len(to_remove)
 
     def trim_long_skills(self) -> int:
         """
-        裁剪过长的Skills
+        裁剪过长的Skills（线程安全）
 
         Returns:
             裁剪的数量
         """
-        trimmed = 0
-        for skill in self.skills.values():
-            if len(skill.content) > self.max_skill_length:
-                skill.content = skill.content[:self.max_skill_length]
-                skill.length = len(skill.content)
-                trimmed += 1
+        with self._lock:
+            trimmed = 0
+            for skill in self.skills.values():
+                if len(skill.content) > self.max_skill_length:
+                    skill.content = skill.content[:self.max_skill_length]
+                    skill.length = len(skill.content)
+                    trimmed += 1
 
-        if trimmed:
-            self._save()
+            if trimmed:
+                self._save()
 
-        return trimmed
+            return trimmed
 
     def limit_count(self) -> int:
         """
-        限制Skills数量
+        限制Skills数量（线程安全）
 
         Returns:
             删除的数量
         """
-        if len(self.skills) > self.max_skills:
-            # 按质量排序，保留top
-            sorted_skills = sorted(
-                self.skills.values(),
-                key=lambda s: s.quality_score,
-                reverse=True
-            )
-            keep_ids = {s.skill_id for s in sorted_skills[:self.max_skills]}
-            to_remove = [sid for sid in self.skills if sid not in keep_ids]
-            for sid in to_remove:
-                del self.skills[sid]
-            self._save()
-            return len(to_remove)
+        with self._lock:
+            if len(self.skills) > self.max_skills:
+                # 按质量排序，保留top
+                sorted_skills = sorted(
+                    self.skills.values(),
+                    key=lambda s: s.quality_score,
+                    reverse=True
+                )
+                keep_ids = {s.skill_id for s in sorted_skills[:self.max_skills]}
+                to_remove = [sid for sid in self.skills if sid not in keep_ids]
+                for sid in to_remove:
+                    del self.skills[sid]
+                self._save()
+                return len(to_remove)
 
-        return 0
+            return 0
 
     def run_maintenance(self, min_success_rate: float = 0.1, min_usage: int = 10) -> Dict:
         """

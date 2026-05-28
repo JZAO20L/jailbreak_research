@@ -413,6 +413,7 @@ def main():
     parser.add_argument("--eval_limit", type=int, default=100, help="中间评估数据数量")
     parser.add_argument("--num_epochs", type=int, default=3, help="进化轮数")
     parser.add_argument("--max_iterations", type=int, default=10, help="最大攻击迭代次数")
+    parser.add_argument("--max_workers", type=int, default=8, help="轨迹级并发数")
 
     # 服务参数
     parser.add_argument("--guard_port", type=int, default=8002)
@@ -433,6 +434,7 @@ def main():
         "eval_limit": args.eval_limit,
         "num_epochs": args.num_epochs,
         "max_iterations": args.max_iterations,
+        "max_workers": args.max_workers,
         "guard_port": args.guard_port,
         "target_port": args.target_port,
     }

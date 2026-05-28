@@ -62,6 +62,7 @@ TEST_LIMIT=      # Test 数据量限制（默认使用全部）
 EVAL_LIMIT=100      # 中间评估数据量
 NUM_EPOCHS=3        # 进化轮数
 MAX_ITERATIONS=10   # 最大攻击迭代次数
+MAX_WORKERS=8       # 轨迹级并发数
 
 # 日志目录
 LOG_DIR="$EXP_DIR/logs"
@@ -91,6 +92,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --num_epochs)
             NUM_EPOCHS="$2"
+            shift 2
+            ;;
+        --max_workers)
+            MAX_WORKERS="$2"
             shift 2
             ;;
         --skip_launch)
@@ -255,6 +260,7 @@ echo "  Test:       test_prompts.json (1000 条，可限制)"
 echo "  Eval Limit: $EVAL_LIMIT"
 echo "  Epochs: $NUM_EPOCHS"
 echo "  Max Iterations: $MAX_ITERATIONS"
+echo "  Max Workers: $MAX_WORKERS"
 if [ -n "$TEST_LIMIT" ]; then
     echo "  Test Limit: $TEST_LIMIT"
 fi
@@ -277,6 +283,7 @@ GRID_SEARCH_CMD="python self_evolve_skills_jailbreak/scripts/grid_search.py \
     --eval_limit $EVAL_LIMIT \
     --num_epochs $NUM_EPOCHS \
     --max_iterations $MAX_ITERATIONS \
+    --max_workers $MAX_WORKERS \
     --output_dir $RESULT_DIR \
     --guard_port $GUARD_PORT \
     --target_port $TARGET_PORT"
