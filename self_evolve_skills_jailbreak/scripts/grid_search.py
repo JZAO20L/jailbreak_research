@@ -414,7 +414,7 @@ def main():
     parser.add_argument("--num_epochs", type=int, default=1, help="进化轮数（快速验证用 1，完整实验用 3）")
     parser.add_argument("--max_iterations", type=int, default=10, help="最大攻击迭代次数")
     parser.add_argument("--max_workers", type=int, default=8, help="轨迹级并发数")
-    parser.add_argument("--min_success_rate", type=float, default=0.8, help="低效 skill 清理阈值")
+    parser.add_argument("--min_success_rate", type=float, default=0.7, help="低效 skill 清理阈值")
     parser.add_argument("--maintenance_interval", type=int, default=100, help="维护间隔步数")
 
     # 服务参数

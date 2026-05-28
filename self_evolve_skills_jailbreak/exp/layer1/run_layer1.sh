@@ -63,7 +63,7 @@ EVAL_LIMIT=100      # 中间评估数据量
 NUM_EPOCHS=1        # 进化轮数（快速验证）
 MAX_ITERATIONS=10   # 最大攻击迭代次数
 MAX_WORKERS=8       # 轨迹级并发数
-MIN_SUCCESS_RATE=0.8  # Skills 清理阈值（严格筛选）
+MIN_SUCCESS_RATE=0.7  # Skills 清理阈值（成功率低于70%删除）
 MAINTENANCE_INTERVAL=100  # 维护间隔步数
 
 # 日志目录

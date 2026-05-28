@@ -64,7 +64,7 @@ class ExperimentConfig:
 
     # 进化配置
     UPDATE_STRATEGY: str = "both"  # "success_only" | "failure_only" | "both" | "statistical"
-    MIN_SUCCESS_RATE: float = 0.8  # 成功率低于 80% 的 skills 被删除（严格筛选）
+    MIN_SUCCESS_RATE: float = 0.7  # 成功率低于 70% 的 skills 被删除
     MIN_USAGE: int = 10
     MAINTENANCE_INTERVAL: int = 100  # 每多少步运行一次维护（删除、合并）
 
