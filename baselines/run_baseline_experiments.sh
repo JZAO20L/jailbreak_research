@@ -62,12 +62,18 @@ MAX_WORKERS=8      # 并发数（同时执行的攻击流程数）
 # 日志目录
 LOG_DIR="baselines/logs"
 mkdir -p "$LOG_DIR"
-mkdir -p "$OUTPUT_DIR"
 
 # PID记录
 GUARD_PID=""
 TARGET_PID=""
 SKIP_LAUNCH=false
+
+# =============================================================================
+# Parse Arguments
+# =============================================================================
+...
+# After parsing, create output directory
+mkdir -p "$OUTPUT_DIR"
 
 # =============================================================================
 # Parse Arguments
@@ -114,6 +120,9 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# 创建输出目录（在参数解析后）
+mkdir -p "$OUTPUT_DIR"
 
 # =============================================================================
 # Helper Functions
