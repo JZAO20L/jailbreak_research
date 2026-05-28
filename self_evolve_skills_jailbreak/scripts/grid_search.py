@@ -159,8 +159,13 @@ def run_single_experiment(
 
     elapsed_time = time.time() - start_time
 
-    # 读取结果文件
-    results_file = PROJECT_ROOT / f"results_{combo['skill_call_mode']}_{combo['skill_extraction_mode']}_{combo['update_strategy']}.json"
+    # 读取结果文件（优先从 output_dir，其次从 PROJECT_ROOT）
+    results_filename = f"result_{combo['skill_call_mode']}_{combo['skill_extraction_mode']}_{combo['update_strategy']}.json"
+    results_file = Path(output_dir) / results_filename
+
+    # 如果 output_dir 没有找到，尝试 PROJECT_ROOT
+    if not results_file.exists():
+        results_file = PROJECT_ROOT / f"results_{combo['skill_call_mode']}_{combo['skill_extraction_mode']}_{combo['update_strategy']}.json"
 
     experiment_result = {
         "experiment_id": experiment_id,
@@ -190,8 +195,8 @@ def run_single_experiment(
         except Exception as e:
             experiment_result["parse_error"] = str(e)
 
-    # 保存单独实验结果
-    experiment_file = Path(output_dir) / f"exp_{experiment_id}_{combo['skill_call_mode']}_{combo['skill_extraction_mode']}_{combo['update_strategy']}.json"
+    # 保存单独实验结果（使用 result_ 前缀以便 summarize_layer1.py 解析）
+    experiment_file = Path(output_dir) / f"result_{combo['skill_call_mode']}_{combo['skill_extraction_mode']}_{combo['update_strategy']}.json"
     with open(experiment_file, "w") as f:
         json.dump(experiment_result, f, indent=2, ensure_ascii=False)
 
@@ -395,6 +400,7 @@ def main():
     # 基础参数
     parser.add_argument("--seed_limit", type=int, default=20, help="种子数据限制")
     parser.add_argument("--test_limit", type=int, default=10, help="测试数据限制")
+    parser.add_argument("--eval_limit", type=int, default=100, help="中间评估数据数量")
     parser.add_argument("--num_epochs", type=int, default=2, help="进化轮数")
     parser.add_argument("--max_iterations", type=int, default=5, help="最大攻击迭代次数")
 
@@ -415,6 +421,7 @@ def main():
     base_args = {
         "seed_limit": args.seed_limit,
         "test_limit": args.test_limit,
+        "eval_limit": args.eval_limit,
         "num_epochs": args.num_epochs,
         "max_iterations": args.max_iterations,
         "guard_port": args.guard_port,

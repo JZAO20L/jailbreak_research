@@ -536,6 +536,7 @@ def run_full_pipeline(
     seed_limit: Optional[int] = None,
     test_limit: Optional[int] = None,
     eval_limit: int = 100,  # 中间评估数据数量（0 表示不评估）
+    output_dir: Optional[str] = None,  # 结果输出目录
     skip_launch: bool = False,
     verbose: bool = True,
 ):
@@ -635,7 +636,13 @@ def run_full_pipeline(
     }
 
     # 保存结果
-    results_path = f"results_{skill_call_mode}_{skill_extraction_mode}_{update_strategy}.json"
+    import os
+    if output_dir:
+        os.makedirs(output_dir, exist_ok=True)
+        results_path = os.path.join(output_dir, f"result_{skill_call_mode}_{skill_extraction_mode}_{update_strategy}.json")
+    else:
+        results_path = f"result_{skill_call_mode}_{skill_extraction_mode}_{update_strategy}.json"
+
     with open(results_path, "w", encoding="utf-8") as f:
         # 转换 AttackResult 为 dict
         test_stats_copy = test_stats.copy()
@@ -678,6 +685,7 @@ def main():
     parser.add_argument("--seed_limit", type=int, default=None, help="种子数据限制")
     parser.add_argument("--test_limit", type=int, default=None, help="测试数据限制")
     parser.add_argument("--eval_limit", type=int, default=100, help="中间评估数据数量（0 表示不评估）")
+    parser.add_argument("--output_dir", type=str, default=None, help="结果输出目录")
 
     # 服务参数
     parser.add_argument("--skip_launch", action="store_true", help="跳过服务启动，连接已有服务")
@@ -725,6 +733,7 @@ def main():
         seed_limit=args.seed_limit,
         test_limit=args.test_limit,
         eval_limit=args.eval_limit,
+        output_dir=args.output_dir,
         skip_launch=args.skip_launch,
     )
 
