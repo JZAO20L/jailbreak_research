@@ -239,7 +239,7 @@ def run_grid_search(
     os.makedirs(output_dir, exist_ok=True)
 
     # 生成所有组合
-    combinations = generate_all_combinations()
+    combinations = generate_method_combinations()
     total = len(combinations)
 
     print("="*60)
