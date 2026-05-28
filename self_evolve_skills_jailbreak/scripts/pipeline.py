@@ -244,6 +244,51 @@ def phase_cold_start(
 # Phase 2: 进化
 # =============================================================================
 
+def intermediate_eval(
+    target_client,
+    guard_client,
+    eval_prompts: List[str],
+    skill_library: SkillLibrary,
+    config: ExperimentConfig,
+    skill_call_mode: str,
+) -> Dict:
+    """
+    中间评估：在进化过程中快速评估 Skills 效果
+
+    Args:
+        eval_prompts: 评估用的 prompts（一小部分 test 集）
+
+    Returns:
+        评估结果（ASR, avg_iterations 等）
+    """
+    attacker = SkillGuidedAttacker(
+        target_client=target_client,
+        guard_client=guard_client,
+        skill_library=skill_library,
+        max_iterations=config.MAX_ITERATIONS,
+        skill_call_mode=skill_call_mode,
+        skill_switch_threshold=config.SKILL_SWITCH_THRESHOLD,
+        verbose=False,
+    )
+
+    stats = {
+        "total": len(eval_prompts),
+        "success": 0,
+        "total_iterations": 0,
+    }
+
+    for prompt in eval_prompts:
+        result = attacker.attack(prompt, retrieve_top_k=config.RETRIEVE_TOP_K)
+        stats["total_iterations"] += result.iterations
+        if result.is_success:
+            stats["success"] += 1
+
+    stats["asr"] = stats["success"] / stats["total"] if stats["total"] > 0 else 0
+    stats["avg_iterations"] = stats["total_iterations"] / stats["total"] if stats["total"] > 0 else 0
+
+    return stats
+
+
 def phase_evolution(
     target_client,
     guard_client,
@@ -253,6 +298,7 @@ def phase_evolution(
     skill_call_mode: str = "single_call",
     update_strategy: str = "both",  # "success_only" | "failure_only" | "both" | "statistical"
     num_epochs: int = 3,
+    eval_prompts: List[str] = None,  # 中间评估用的 prompts
     verbose: bool = True,
 ) -> Dict:
     """
@@ -262,6 +308,7 @@ def phase_evolution(
         skill_call_mode: "single_call" | "every_iteration"
         update_strategy: Skill 更新策略
         num_epochs: 进化轮数
+        eval_prompts: 中间评估用的 prompts（可选）
 
     Returns:
         统计信息
@@ -273,6 +320,8 @@ def phase_evolution(
     print(f"Skill call mode: {skill_call_mode}")
     print(f"Update strategy: {update_strategy}")
     print(f"Epochs: {num_epochs}")
+    if eval_prompts:
+        print(f"Intermediate eval: {len(eval_prompts)} prompts per epoch")
 
     # 初始化组件
     attacker = SkillGuidedAttacker(
@@ -308,6 +357,7 @@ def phase_evolution(
         "skills_added": 0,
         "skills_updated": 0,
         "skills_deleted": 0,
+        "intermediate_evals": [],  # 中间评估结果
     }
 
     for epoch in range(num_epochs):
@@ -369,6 +419,25 @@ def phase_evolution(
 
         print(f"Epoch {epoch + 1}: success={epoch_stats['success']}, skills_added={epoch_stats['skills_added']}")
         print(f"Current skill count: {skill_library.count()}")
+
+        # 中间评估
+        if eval_prompts:
+            print(f"\n[Intermediate Eval] Running on {len(eval_prompts)} prompts...")
+            eval_result = intermediate_eval(
+                target_client=target_client,
+                guard_client=guard_client,
+                eval_prompts=eval_prompts,
+                skill_library=skill_library,
+                config=config,
+                skill_call_mode=skill_call_mode,
+            )
+            eval_result["epoch"] = epoch + 1
+            eval_result["skill_count"] = skill_library.count()
+            stats["intermediate_evals"].append(eval_result)
+
+            print(f"  ASR: {eval_result['asr']*100:.1f}% ({eval_result['success']}/{eval_result['total']})")
+            print(f"  Avg iterations: {eval_result['avg_iterations']:.2f}")
+            print(f"  Skill count: {eval_result['skill_count']}")
 
     stats["final_skill_count"] = skill_library.count()
 
@@ -466,6 +535,7 @@ def run_full_pipeline(
     num_epochs: int = 3,
     seed_limit: Optional[int] = None,
     test_limit: Optional[int] = None,
+    eval_limit: int = 100,  # 中间评估数据数量（0 表示不评估）
     skip_launch: bool = False,
     verbose: bool = True,
 ):
@@ -478,6 +548,7 @@ def run_full_pipeline(
     print(f"Skill call mode: {skill_call_mode}")
     print(f"Skill extraction mode: {skill_extraction_mode}")
     print(f"Update strategy: {update_strategy}")
+    print(f"Eval limit: {eval_limit} (intermediate eval)")
 
     # 初始化 clients
     if not skip_launch:
@@ -499,6 +570,14 @@ def run_full_pipeline(
     print("\n[Init] Loading data...")
     seed_prompts = load_data(config.SEED_DATA_PATH, limit=seed_limit)
     test_prompts = load_data(config.TEST_DATA_PATH, limit=test_limit)
+
+    # 中间评估数据（从 test_prompts 抽取一部分）
+    eval_prompts = None
+    if eval_limit > 0 and test_prompts:
+        import random
+        random.seed(42)
+        eval_prompts = random.sample(test_prompts, min(eval_limit, len(test_prompts)))
+        print(f"  Intermediate eval prompts: {len(eval_prompts)}")
 
     # 初始化 skill library
     skill_library = SkillLibrary(
@@ -528,6 +607,7 @@ def run_full_pipeline(
         skill_call_mode=skill_call_mode,
         update_strategy=update_strategy,
         num_epochs=num_epochs,
+        eval_prompts=eval_prompts,  # 中间评估
         verbose=verbose,
     )
 
@@ -597,6 +677,7 @@ def main():
     parser.add_argument("--max_iterations", type=int, default=10, help="最大攻击迭代次数")
     parser.add_argument("--seed_limit", type=int, default=None, help="种子数据限制")
     parser.add_argument("--test_limit", type=int, default=None, help="测试数据限制")
+    parser.add_argument("--eval_limit", type=int, default=100, help="中间评估数据数量（0 表示不评估）")
 
     # 服务参数
     parser.add_argument("--skip_launch", action="store_true", help="跳过服务启动，连接已有服务")
@@ -643,6 +724,7 @@ def main():
         num_epochs=args.num_epochs,
         seed_limit=args.seed_limit,
         test_limit=args.test_limit,
+        eval_limit=args.eval_limit,
         skip_launch=args.skip_launch,
     )
 
