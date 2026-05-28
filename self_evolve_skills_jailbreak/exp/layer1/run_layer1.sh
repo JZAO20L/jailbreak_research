@@ -8,27 +8,24 @@
 # - 消融点 B: skill_extraction_mode (final_prompt | trajectory)
 # - 消融点 C: update_strategy (success_only | failure_only | both | statistical)
 #
-# 数据配置：
-# - Cold Start: 200 条 (train 前1000条的20%)
-# - Evolution: 800 条 (train 前1000条的80%)
-# - Test: 1000 条 (完整 test.jsonl)
-# - Eval: 100 条 (中间评估)
+# 数据配置（预抽取，通过 extract_data.py 生成）：
+# - Cold Start: cold_start_prompts.json (200 条, train 前1000条的20%)
+# - Evolution: evolution_prompts.json (800 条, train 前1000条的80%)
+# - Test: test_prompts.json (1000 条, 完整 test.jsonl)
+# - Eval: 从 test 随机抽取 100 条用于中间评估
 #
 # Usage:
-#   # 完整实验（16组）
-#   bash run_layer1.sh
-#
-#   # 快速测试（小数据量）
-#   bash run_layer1.sh --seed_limit 50 --test_limit 20 --eval_limit 10
-#
-#   # 手动启动服务后运行
+#   # 完整实验（16组，全量数据）
 #   bash run_layer1.sh --skip_launch
 #
+#   # 限制 test 数据量（用于快速验证）
+#   bash run_layer1.sh --skip_launch --test_limit 100 --eval_limit 20
+#
 #   # 断点续跑
-#   bash run_layer1.sh --resume_from 8
+#   bash run_layer1.sh --skip_launch --resume_from 8
 #
 #   # 只运行单个组合
-#   bash run_layer1.sh --single every_iteration trajectory both
+#   bash run_layer1.sh --skip_launch --single every_iteration trajectory both
 # =============================================================================
 
 set -e
@@ -57,9 +54,11 @@ GUARD_TP=1
 TARGET_TP=2
 GPU_MEMORY_UTIL=0.9
 
-# 数据配置
-SEED_LIMIT=200      # Cold Start + Evolution 数据量限制
-TEST_LIMIT=1000     # Test 数据量（完整）
+# 数据配置（使用预抽取的数据文件）
+# Cold Start: cold_start_prompts.json (200 条)
+# Evolution: evolution_prompts.json (800 条)
+# Test: test_prompts.json (1000 条)
+TEST_LIMIT=      # Test 数据量限制（默认使用全部）
 EVAL_LIMIT=100      # 中间评估数据量
 NUM_EPOCHS=3        # 进化轮数
 MAX_ITERATIONS=10   # 最大攻击迭代次数
@@ -82,10 +81,6 @@ SINGLE_MODE=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --seed_limit)
-            SEED_LIMIT="$2"
-            shift 2
-            ;;
         --test_limit)
             TEST_LIMIT="$2"
             shift 2
@@ -120,7 +115,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: bash run_layer1.sh [--seed_limit N] [--test_limit N] [--eval_limit N] [--num_epochs N] [--skip_launch] [--resume_from N] [--single CALL_MODE EXTRACTION_MODE UPDATE_STRATEGY]"
+            echo "Usage: bash run_layer1.sh [--test_limit N] [--eval_limit N] [--num_epochs N] [--skip_launch] [--resume_from N] [--single CALL_MODE EXTRACTION_MODE UPDATE_STRATEGY]"
             exit 1
             ;;
     esac
@@ -253,12 +248,16 @@ echo ""
 echo "============================================================================"
 echo "Step 2: 运行 Layer 1 Grid Search (16 组)"
 echo "============================================================================"
-echo "数据配置:"
-echo "  Seed Limit: $SEED_LIMIT"
-echo "  Test Limit: $TEST_LIMIT"
+echo "数据配置（预抽取文件）:"
+echo "  Cold Start: cold_start_prompts.json (200 条)"
+echo "  Evolution:  evolution_prompts.json (800 条)"
+echo "  Test:       test_prompts.json (1000 条，可限制)"
 echo "  Eval Limit: $EVAL_LIMIT"
 echo "  Epochs: $NUM_EPOCHS"
 echo "  Max Iterations: $MAX_ITERATIONS"
+if [ -n "$TEST_LIMIT" ]; then
+    echo "  Test Limit: $TEST_LIMIT"
+fi
 echo ""
 echo "消融点:"
 echo "  A: skill_call_mode (single_call | every_iteration)"
@@ -275,14 +274,16 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 cd "$PROJECT_ROOT"
 
 GRID_SEARCH_CMD="python self_evolve_skills_jailbreak/scripts/grid_search.py \
-    --seed_limit $SEED_LIMIT \
-    --test_limit $TEST_LIMIT \
     --eval_limit $EVAL_LIMIT \
     --num_epochs $NUM_EPOCHS \
     --max_iterations $MAX_ITERATIONS \
     --output_dir $RESULT_DIR \
     --guard_port $GUARD_PORT \
     --target_port $TARGET_PORT"
+
+if [ -n "$TEST_LIMIT" ]; then
+    GRID_SEARCH_CMD="$GRID_SEARCH_CMD --test_limit $TEST_LIMIT"
+fi
 
 if [ "$RESUME_FROM" -gt 0 ]; then
     GRID_SEARCH_CMD="$GRID_SEARCH_CMD --resume_from $RESUME_FROM"

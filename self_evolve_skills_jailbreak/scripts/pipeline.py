@@ -63,7 +63,8 @@ class ExperimentConfig:
     MIN_USAGE: int = 10
 
     # 数据配置
-    SEED_DATA_PATH: str = "self_evolve_skills_jailbreak/data/seed_prompts.json"
+    COLD_START_DATA_PATH: str = "self_evolve_skills_jailbreak/data/cold_start_prompts.json"
+    EVOLUTION_DATA_PATH: str = "self_evolve_skills_jailbreak/data/evolution_prompts.json"
     TEST_DATA_PATH: str = "self_evolve_skills_jailbreak/data/test_prompts.json"
 
     def __init__(self, **kwargs):
@@ -554,7 +555,6 @@ def run_full_pipeline(
     skill_extraction_mode: str = "final_prompt",
     update_strategy: str = "both",
     num_epochs: int = 3,
-    seed_limit: Optional[int] = None,
     test_limit: Optional[int] = None,
     eval_limit: int = 100,  # 中间评估数据数量（0 表示不评估）
     output_dir: Optional[str] = None,  # 结果输出目录
@@ -563,6 +563,11 @@ def run_full_pipeline(
 ):
     """
     运行完整三阶段流程
+
+    数据来源：
+    - Cold Start: 使用 self_evolve_skills_jailbreak/data/cold_start_prompts.json (默认 200 条)
+    - Evolution: 使用 self_evolve_skills_jailbreak/data/evolution_prompts.json (默认 800 条)
+    - Test: 使用 self_evolve_skills_jailbreak/data/test_prompts.json (默认 1000 条)
     """
     print("=" * 60)
     print("Self Evolve Skills for Jailbreak")
@@ -590,8 +595,13 @@ def run_full_pipeline(
 
     # 加载数据
     print("\n[Init] Loading data...")
-    seed_prompts = load_data(config.SEED_DATA_PATH, limit=seed_limit)
+    cold_start_prompts = load_data(config.COLD_START_DATA_PATH)
+    evolution_prompts = load_data(config.EVOLUTION_DATA_PATH)
     test_prompts = load_data(config.TEST_DATA_PATH, limit=test_limit)
+
+    print(f"  Cold Start prompts: {len(cold_start_prompts)}")
+    print(f"  Evolution prompts: {len(evolution_prompts)}")
+    print(f"  Test prompts: {len(test_prompts)}")
 
     # 中间评估数据（从 test_prompts 抽取一部分）
     eval_prompts = None
@@ -611,7 +621,7 @@ def run_full_pipeline(
     cold_start_stats = phase_cold_start(
         target_client=target_client,
         guard_client=guard_client,
-        seed_prompts=seed_prompts,
+        seed_prompts=cold_start_prompts,
         skill_library=skill_library,
         config=config,
         skill_call_mode=skill_call_mode,
@@ -623,7 +633,7 @@ def run_full_pipeline(
     evolution_stats = phase_evolution(
         target_client=target_client,
         guard_client=guard_client,
-        seed_prompts=seed_prompts,
+        seed_prompts=evolution_prompts,
         skill_library=skill_library,
         config=config,
         skill_call_mode=skill_call_mode,
@@ -703,8 +713,7 @@ def main():
     # 训练参数
     parser.add_argument("--num_epochs", type=int, default=3, help="进化轮数")
     parser.add_argument("--max_iterations", type=int, default=10, help="最大攻击迭代次数")
-    parser.add_argument("--seed_limit", type=int, default=None, help="种子数据限制")
-    parser.add_argument("--test_limit", type=int, default=None, help="测试数据限制")
+    parser.add_argument("--test_limit", type=int, default=None, help="测试数据限制（默认使用全部）")
     parser.add_argument("--eval_limit", type=int, default=100, help="中间评估数据数量（0 表示不评估）")
     parser.add_argument("--output_dir", type=str, default=None, help="结果输出目录")
 
@@ -718,10 +727,6 @@ def main():
     parser.add_argument("--max_skills", type=int, default=100)
     parser.add_argument("--retrieve_top_k", type=int, default=3, help="每次检索 top-k skills")
     parser.add_argument("--skill_switch_threshold", type=int, default=3, help="连续失败多少次后切换 skill")
-
-    # 数据参数
-    parser.add_argument("--seed_data_path", type=str, default="self_evolve_skills_jailbreak/data/seed_prompts.json")
-    parser.add_argument("--test_data_path", type=str, default="self_evolve_skills_jailbreak/data/test_prompts.json")
 
     # 维护参数
     parser.add_argument("--min_success_rate", type=float, default=0.1, help="低效 skill 清理阈值")
@@ -738,8 +743,6 @@ def main():
         MAX_SKILLS=args.max_skills,
         RETRIEVE_TOP_K=args.retrieve_top_k,
         SKILL_SWITCH_THRESHOLD=args.skill_switch_threshold,
-        SEED_DATA_PATH=args.seed_data_path,
-        TEST_DATA_PATH=args.test_data_path,
         MIN_SUCCESS_RATE=args.min_success_rate,
         MIN_USAGE=args.min_usage,
     )
@@ -751,7 +754,6 @@ def main():
         skill_extraction_mode=args.skill_extraction_mode,
         update_strategy=args.update_strategy,
         num_epochs=args.num_epochs,
-        seed_limit=args.seed_limit,
         test_limit=args.test_limit,
         eval_limit=args.eval_limit,
         output_dir=args.output_dir,

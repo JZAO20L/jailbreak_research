@@ -409,11 +409,10 @@ def main():
     parser = argparse.ArgumentParser(description="Grid Search for Self Evolve Skills")
 
     # 基础参数
-    parser.add_argument("--seed_limit", type=int, default=20, help="种子数据限制")
-    parser.add_argument("--test_limit", type=int, default=10, help="测试数据限制")
+    parser.add_argument("--test_limit", type=int, default=None, help="测试数据限制（默认使用全部）")
     parser.add_argument("--eval_limit", type=int, default=100, help="中间评估数据数量")
-    parser.add_argument("--num_epochs", type=int, default=2, help="进化轮数")
-    parser.add_argument("--max_iterations", type=int, default=5, help="最大攻击迭代次数")
+    parser.add_argument("--num_epochs", type=int, default=3, help="进化轮数")
+    parser.add_argument("--max_iterations", type=int, default=10, help="最大攻击迭代次数")
 
     # 服务参数
     parser.add_argument("--guard_port", type=int, default=8002)
@@ -430,7 +429,6 @@ def main():
     args = parser.parse_args()
 
     base_args = {
-        "seed_limit": args.seed_limit,
         "test_limit": args.test_limit,
         "eval_limit": args.eval_limit,
         "num_epochs": args.num_epochs,
