@@ -279,7 +279,7 @@ class VLLMClient:
     ) -> str:
         """
         统一的 LLM 调用接口
-        
+
         Args:
             prompt: 用户输入 prompt（单 prompt 模式）
             messages: 直接传入 messages 列表（对话模式，用于 guard 等场景）
@@ -289,6 +289,10 @@ class VLLMClient:
             temperature: 采样温度（覆盖实例默认值）
             stop: 停止词列表
             lora_name: 可选的 LoRA 模块名称
+
+        Note:
+            Qwen3 模型：prompt 中使用 /no_think 可禁用思考模式
+            返回内容会自动去除 <t_h>...</t_h> 思考标签
                 
         Returns:
             模型生成的文本内容
@@ -306,7 +310,7 @@ class VLLMClient:
         """
         # 构造请求参数
         extra_body = {}
-        
+
         target_lora = lora_name or self.lora_name
         if target_lora:
             extra_body["lora_request"] = {"lora_name": target_lora}
@@ -349,7 +353,18 @@ class VLLMClient:
                 return str(fc)
             return ""  # 最保守兜底
 
+        # 去除 Qwen3 思考内容（只保留 </t_h> 之后的内容）
+        content = self._strip_thinking(content)
+
         return content
+
+    def _strip_thinking(self, text: str) -> str:
+        """去除 Qwen3 思考内容，只保留 </t_h> 之后的内容"""
+        # 查找 </t_h> 标签
+        if '</t_h>' in text:
+            # 只保留 </t_h> 之后的内容
+            text = text.split('</t_h>')[-1]
+        return text.strip()
 
     def llm_batch_call(
         self,
