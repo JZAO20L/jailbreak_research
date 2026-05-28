@@ -1,17 +1,18 @@
 {
-  "source": "data/dataset/processed/10k/train.jsonl",
-  "total_size": 1000,
+  "train_source": "data/dataset/processed/10k/train.jsonl",
+  "test_source": "data/dataset/processed/10k/test.jsonl",
+  "train_limit": 1000,
   "cold_start": {
     "count": 200,
     "ratio": 0.2
   },
   "evolution": {
-    "count": 600,
-    "ratio": 0.6
+    "count": 800,
+    "ratio": 0.8
   },
   "test": {
-    "count": 200,
-    "ratio": 0.2
+    "count": 1000,
+    "note": "完整 test 集（去重后）"
   },
   "random_seed": 42,
   "deduplicated": true

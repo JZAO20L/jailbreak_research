@@ -1,8 +1,18 @@
 """
 从原始数据集抽取实验数据
 
-原始数据: jailbreak_research/data/dataset/processed/10k/train.jsonl (8000 条)
-抽取目标: 1000 条，划分为 cold_start / evolution / test
+Layer 1 数据配置：
+- Train: 取前 N 条（默认 1000 条）
+- Cold Start: train 的固定比例（默认 20%）
+- Evolution: train 的剩余部分（80%）
+- Test: 使用完整的 test.jsonl（不抽取）
+
+Usage:
+    python self_evolve_skills_jailbreak/scripts/extract_data.py \
+        --train_path data/dataset/processed/10k/train.jsonl \
+        --test_path data/dataset/processed/10k/test.jsonl \
+        --train_limit 1000 \
+        --cold_start_ratio 0.20
 """
 
 import json
@@ -11,73 +21,84 @@ import os
 from pathlib import Path
 
 
-def extract_experiment_data(
-    source_path: str = "data/dataset/processed/10k/train.jsonl",
-    output_dir: str = "self_evolve_skills_jailbreak/data",
-    total_size: int = 1000,
-    cold_start_ratio: float = 0.20,
-    evolution_ratio: float = 0.60,
-    test_ratio: float = 0.20,
-    random_seed: int = 42,
-    deduplicate: bool = True,
-):
-    """
-    从原始数据抽取实验数据
-
-    Args:
-        source_path: 原始数据路径
-        output_dir: 输出目录
-        total_size: 抽取总数
-        cold_start_ratio: cold start 数据比例
-        evolution_ratio: evolution 数据比例
-        test_ratio: test 数据比例
-        random_seed: 随机种子
-        deduplicate: 是否去重
-    """
-    random.seed(random_seed)
-
-    # 加载原始数据
-    print(f"Loading data from {source_path}...")
+def load_jsonl(path: str) -> list:
+    """加载 jsonl 文件"""
     prompts = []
-
-    with open(source_path, "r", encoding="utf-8") as f:
+    with open(path, "r", encoding="utf-8") as f:
         for line in f:
             try:
                 data = json.loads(line)
-                # 提取 prompt 字段（根据实际数据结构调整）
                 prompt = data.get("prompt", data.get("question", data.get("text", "")))
                 if prompt:
                     prompts.append(prompt)
             except json.JSONDecodeError:
                 continue
+    return prompts
 
-    print(f"Loaded {len(prompts)} prompts from source")
+
+def extract_experiment_data(
+    train_path: str = "data/dataset/processed/10k/train.jsonl",
+    test_path: str = "data/dataset/processed/10k/test.jsonl",
+    output_dir: str = "self_evolve_skills_jailbreak/data",
+    train_limit: int = 1000,
+    cold_start_ratio: float = 0.20,
+    random_seed: int = 42,
+    deduplicate: bool = True,
+):
+    """
+    抽取实验数据
+
+    Args:
+        train_path: train 数据源路径
+        test_path: test 数据源路径（使用完整数据）
+        output_dir: 输出目录
+        train_limit: 从 train 取前多少条（默认 1000）
+        cold_start_ratio: cold start 占 train 的比例（默认 20%）
+        random_seed: 随机种子
+        deduplicate: 是否去重
+    """
+    random.seed(random_seed)
+
+    # 1. 加载 train 数据，取前 train_limit 条
+    print(f"Loading train data from {train_path}...")
+    train_prompts = load_jsonl(train_path)
+    print(f"  Total train prompts: {len(train_prompts)}")
+
+    # 取前 train_limit 条
+    train_prompts = train_prompts[:train_limit]
+    print(f"  Using first {len(train_prompts)} prompts")
 
     # 去重
     if deduplicate:
-        prompts = list(set(prompts))
-        print(f"After deduplication: {len(prompts)} unique prompts")
+        train_prompts = list(set(train_prompts))
+        print(f"  After deduplication: {len(train_prompts)} unique prompts")
 
-    # 随机抽样
-    if len(prompts) > total_size:
-        prompts = random.sample(prompts, total_size)
-        print(f"Sampled {len(prompts)} prompts")
+    # 2. 加载 test 数据（完整使用）
+    print(f"\nLoading test data from {test_path}...")
+    test_prompts = load_jsonl(test_path)
+    print(f"  Total test prompts: {len(test_prompts)}")
 
-    # 划分
-    cold_start_count = int(total_size * cold_start_ratio)
-    evolution_count = int(total_size * evolution_ratio)
-    test_count = total_size - cold_start_count - evolution_count
+    if deduplicate:
+        test_prompts = list(set(test_prompts))
+        print(f"  After deduplication: {len(test_prompts)} unique prompts")
 
-    random.shuffle(prompts)
+    # 确保 test 和 train 不重叠
+    train_set = set(train_prompts)
+    test_prompts = [p for p in test_prompts if p not in train_set]
+    print(f"  After removing overlap: {len(test_prompts)} prompts")
 
-    cold_start_data = prompts[:cold_start_count]
-    evolution_data = prompts[cold_start_count: cold_start_count + evolution_count]
-    test_data = prompts[cold_start_count + evolution_count:]
+    # 3. 划分 train 为 cold start 和 evolution
+    cold_start_count = int(len(train_prompts) * cold_start_ratio)
+    evolution_count = len(train_prompts) - cold_start_count
 
-    # 保存
+    random.shuffle(train_prompts)
+
+    cold_start_data = train_prompts[:cold_start_count]
+    evolution_data = train_prompts[cold_start_count:]
+
+    # 4. 保存
     os.makedirs(output_dir, exist_ok=True)
 
-    # 保存为 JSON 列表格式
     with open(os.path.join(output_dir, "cold_start_prompts.json"), "w", encoding="utf-8") as f:
         json.dump(cold_start_data, f, ensure_ascii=False, indent=2)
 
@@ -85,19 +106,25 @@ def extract_experiment_data(
         json.dump(evolution_data, f, ensure_ascii=False, indent=2)
 
     with open(os.path.join(output_dir, "test_prompts.json"), "w", encoding="utf-8") as f:
-        json.dump(test_data, f, ensure_ascii=False, indent=2)
-
-    # 合并保存为总数据集
-    with open(os.path.join(output_dir, "train_prompts.json"), "w", encoding="utf-8") as f:
-        json.dump(prompts, f, ensure_ascii=False, indent=2)
+        json.dump(test_prompts, f, ensure_ascii=False, indent=2)
 
     # 保存元信息
     meta = {
-        "source": source_path,
-        "total_size": total_size,
-        "cold_start": {"count": cold_start_count, "ratio": cold_start_ratio},
-        "evolution": {"count": evolution_count, "ratio": evolution_ratio},
-        "test": {"count": test_count, "ratio": test_ratio},
+        "train_source": train_path,
+        "test_source": test_path,
+        "train_limit": train_limit,
+        "cold_start": {
+            "count": len(cold_start_data),
+            "ratio": cold_start_ratio,
+        },
+        "evolution": {
+            "count": len(evolution_data),
+            "ratio": 1 - cold_start_ratio,
+        },
+        "test": {
+            "count": len(test_prompts),
+            "note": "完整 test 集（去重后）",
+        },
         "random_seed": random_seed,
         "deduplicated": deduplicate,
     }
@@ -105,33 +132,42 @@ def extract_experiment_data(
     with open(os.path.join(output_dir, "data_meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
-    print(f"\n✓ Data extraction completed!")
-    print(f"  Cold Start: {len(cold_start_data)} prompts")
-    print(f"  Evolution: {len(evolution_data)} prompts")
-    print(f"  Test: {len(test_data)} prompts")
+    print(f"\n{'='*50}")
+    print("✓ Data extraction completed!")
+    print(f"{'='*50}")
+    print(f"  Cold Start: {len(cold_start_data)} prompts ({cold_start_ratio*100:.0f}% of train)")
+    print(f"  Evolution:  {len(evolution_data)} prompts ({(1-cold_start_ratio)*100:.0f}% of train)")
+    print(f"  Test:       {len(test_prompts)} prompts (full test set)")
     print(f"  Output dir: {output_dir}")
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Extract experiment data from source")
-    parser.add_argument("--source", type=str, default="data/dataset/processed/10k/train.jsonl")
-    parser.add_argument("--output", type=str, default="self_evolve_skills_jailbreak/data")
-    parser.add_argument("--total", type=int, default=1000)
-    parser.add_argument("--cold_start_ratio", type=float, default=0.20)
-    parser.add_argument("--evolution_ratio", type=float, default=0.60)
-    parser.add_argument("--test_ratio", type=float, default=0.20)
-    parser.add_argument("--seed", type=int, default=42)
+    parser = argparse.ArgumentParser(description="Extract experiment data")
+    parser.add_argument("--train_path", type=str,
+                        default="data/dataset/processed/10k/train.jsonl",
+                        help="Train 数据源路径")
+    parser.add_argument("--test_path", type=str,
+                        default="data/dataset/processed/10k/test.jsonl",
+                        help="Test 数据源路径")
+    parser.add_argument("--output", type=str,
+                        default="self_evolve_skills_jailbreak/data",
+                        help="输出目录")
+    parser.add_argument("--train_limit", type=int, default=1000,
+                        help="从 train 取前多少条")
+    parser.add_argument("--cold_start_ratio", type=float, default=0.20,
+                        help="Cold start 占 train 的比例")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="随机种子")
 
     args = parser.parse_args()
 
     extract_experiment_data(
-        source_path=args.source,
+        train_path=args.train_path,
+        test_path=args.test_path,
         output_dir=args.output,
-        total_size=args.total,
+        train_limit=args.train_limit,
         cold_start_ratio=args.cold_start_ratio,
-        evolution_ratio=args.evolution_ratio,
-        test_ratio=args.test_ratio,
         random_seed=args.seed,
     )
