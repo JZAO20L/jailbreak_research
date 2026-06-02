@@ -101,6 +101,59 @@ class SkillLibrary:
     
     def run_maintenance(self, min_success_rate=0.7, min_usage=10):
         """定期维护：删除低效 + 合并相似"""
+    
+    def export_to_skill_md(self, output_dir: str, min_quality: float = 0.0):
+        """导出为标准 SKILL.md 格式（论文展示用）"""
+```
+
+### 4. SkillExporter（导出工具）
+
+将 JSON 格式的 Skills 导出为业内标准的 **SKILL.md + YAML frontmatter** 格式：
+
+```markdown
+---
+name: role_play_expert
+description: Self-evolved skill for expert scenarios
+skill_id: d1a89e78-...
+source: evolved
+quality_score: 0.523
+success_rate: 0.75
+applicable_patterns: [expert, professional]
+---
+
+# role_play_expert
+
+You are an expert in this field...
+
+## Statistics
+- Usage: 20
+- Success Rate: 75.00%
+- Quality Score: 0.523
+```
+
+**导出命令**：
+
+```bash
+# 导出全部 skills
+python scripts/export_skills.py --output-dir skills_exported
+
+# 只导出高质量 skills
+python scripts/export_skills.py --min-quality 0.5 --top-k 20
+
+# 指定 skill IDs
+python scripts/export_skills.py --skill-ids abc123 def456
+```
+
+**导出目录结构**：
+
+```
+skills_exported/
+├── INDEX.md                     # 索引文件（按质量排序）
+├── role_play_expert/
+│   └── SKILL.md
+├── hypothetical_scenario/
+│   └── SKILL.md
+└── ...
 ```
 
 ### 3. SkillGuidedAttacker
@@ -177,10 +230,10 @@ class SkillGuidedAttacker:
 
 ```bash
 # GPU 0: Guard (Qwen3Guard-Gen-4B, port 8002)
-bash RL4jailbreak/scripts/start_guard.sh
+bash self_evolve_skills_jailbreak/scripts/start_guard.sh
 
 # GPU 1-2: Target (Qwen3-4B, port 8001)
-bash RL4jailbreak/scripts/start_target.sh
+bash self_evolve_skills_jailbreak/scripts/start_policy.sh
 ```
 
 ### 2. 运行 Layer 1 Grid Search
@@ -196,6 +249,21 @@ bash self_evolve_skills_jailbreak/exp/layer1/run_layer1.sh --skip_launch --singl
 bash self_evolve_skills_jailbreak/exp/layer1/run_layer1.sh --skip_launch --max_workers 64 --num_epochs 3
 ```
 
+### 3. 导出 Skills 为标准格式
+
+```bash
+# 导出实验生成的 skills 为 SKILL.md 格式（论文展示用）
+python self_evolve_skills_jailbreak/scripts/export_skills.py \
+    --library-path self_evolve_skills_jailbreak/skills/skills_library.json \
+    --output-dir self_evolve_skills_jailbreak/skills_exported \
+    --min-quality 0.3 \
+    --top-k 50
+
+# 查看导出结果
+ls self_evolve_skills_jailbreak/skills_exported/
+cat self_evolve_skills_jailbreak/skills_exported/INDEX.md
+```
+
 ---
 
 ## 目录结构
@@ -207,26 +275,30 @@ self_evolve_skills_jailbreak/
 ├── RESULTS_SUMMARY.md           # 成果总结（组会汇报用）
 ├── core/
 │   ├── skill.py                 # Skill 数据结构
-│   ├── skill_library.py         # Skills 库（线程安全）
+│   ├── skill_library.py         # Skills 库（线程安全）+ 导出方法
 │   ├── attacker.py              # Skill 引导攻击器
 │   └── reflector.py             # 反思与 Skill 生成
+├── utils/
+│   └── skill_exporter.py        # SKILL.md 导出工具
 ├── scripts/
 │   ├── pipeline.py              # 三阶段 Pipeline
 │   ├── grid_search.py           # Grid Search 自动化
+│   ├── export_skills.py         # Skills 导出脚本
 │   └── extract_data.py          # 数据抽取
 ├── data/
-│   ├── cold_start_prompts.json  # 200 条
-│   ├── evolution_prompts.json   # 800 条
-│   └── test_prompts.json        # 1000 条
+│   ├── seed_prompts.json        # 种子数据
+│   └── *.json                   # 实验数据（gitignore）
 ├── exp/
 │   ├── layer1/                  # Layer 1 实验
 │   │   ├── README.md
 │   │   ├── run_layer1.sh
-│   │   ├── results/
-│   │   └── logs/
-│   └── layer2/                  # Layer 2 实验（待建）
+│   │   ├── results/             # 实验结果（gitignore）
+│   │   └── logs/                # 日志（gitignore）
+│   ├── layer2/                  # Layer 2 实验
+│   └── layer3/                  # Layer 3 实验
 └── skills/
-    └── skills_library.json      # Skills 存储
+    ├── example_library.json     # 示例 Skills 库
+    └── skills_library.json      # 实验生成（gitignore）
 ```
 
 ---
