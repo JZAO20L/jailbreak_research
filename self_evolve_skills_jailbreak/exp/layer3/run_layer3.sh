@@ -1,37 +1,27 @@
 #!/bin/bash
 # =============================================================================
-# Layer 1 Grid Search Experiment Launcher
+# Layer 3: AutoDAN起点Skills实验
 # =============================================================================
 #
-# Layer 1: 核心方法消融 (2 × 2 × 4 = 16 组)
-# - 消融点 A: skill_call_mode (single_call | every_iteration)
-# - 消融点 B: skill_extraction_mode (final_prompt | trajectory)
-# - 消融点 C: update_strategy (success_only | failure_only | both | statistical)
+# Layer 3: DAN模板作为初始Skills，探索数据策略对Skills进化的影响
+# - Skills来源: DAN模板 (6个)
+# - 更新策略: statistical (固定)
+# - 检索模式: single_call (固定)
+# - 数据量: small/medium/large (300/500/1000)
+# - 配比: full_evolve/early/balanced/evo (0%/30%/20%/10%)
 #
-# 数据配置（预抽取，通过 extract_data.py 生成）：
-# - Cold Start: cold_start_prompts.json (200 条, train 前1000条的20%)
-# - Evolution: evolution_prompts.json (800 条, train 前1000条的80%)
-# - Test: test_prompts.json (1000 条, 完整 test.jsonl)
-# - Eval: 从 test 随机抽取 100 条用于中间评估
+# 实验总数: 3 × 4 = 12组
 #
 # Usage:
-#   # 完整实验（16组，全量数据）
-#   bash run_layer1.sh --skip_launch
-#
-#   # 限制 test 数据量（用于快速验证）
-#   bash run_layer1.sh --skip_launch --test_limit 100 --eval_limit 20
-#
-#   # 断点续跑
-#   bash run_layer1.sh --skip_launch --resume_from 8
-#
-#   # 只运行单个组合
-#   bash run_layer1.sh --skip_launch --single every_iteration trajectory both
+#   bash run_layer3.sh --skip_launch --max_workers 64
+#   bash run_layer3.sh --skip_launch --single medium full_evolve
+#   bash run_layer3.sh --skip_launch --resume_from 5
 # =============================================================================
 
 set -e
 
 # =============================================================================
-# 配置
+# Configuration
 # =============================================================================
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -54,22 +44,17 @@ GUARD_TP=1
 TARGET_TP=2
 GPU_MEMORY_UTIL=0.9
 
-# 数据配置（使用预抽取的数据文件）
-# Cold Start: cold_start_prompts.json (200 条)
-# Evolution: evolution_prompts.json (800 条)
-# Test: test_prompts.json (1000 条)
-TEST_LIMIT=      # Test 数据量限制（默认使用全部）
-EVAL_LIMIT=100      # 中间评估数据量
-NUM_EPOCHS=1        # 进化轮数（快速验证）
-MAX_ITERATIONS=10   # 最大攻击迭代次数
-MAX_WORKERS=8       # 轨迹级并发数
-MIN_SUCCESS_RATE=0.7  # Skills 清理阈值（成功率低于70%删除）
-MAINTENANCE_INTERVAL=100  # 维护间隔步数
+# 实验参数
+NUM_EPOCHS=1
+MAX_ITERATIONS=10
+MAX_WORKERS=64
+MIN_SUCCESS_RATE=0.7
+MAINTENANCE_INTERVAL=100
 
-# 日志目录（Layer 1 专属）
+# 日志目录
 LOG_DIR="$SCRIPT_DIR/logs"
 RESULT_DIR="$SCRIPT_DIR/results"
-PROCESS_LOG="$SCRIPT_DIR/process.log"  # Grid Search 过程日志
+PROCESS_LOG="$SCRIPT_DIR/process.log"
 mkdir -p "$LOG_DIR" "$RESULT_DIR" "$RESULT_DIR/skills"
 
 # PID 记录
@@ -80,33 +65,17 @@ RESUME_FROM=0
 SINGLE_MODE=""
 
 # =============================================================================
-# 解析参数
+# Parse Arguments
 # =============================================================================
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --test_limit)
-            TEST_LIMIT="$2"
-            shift 2
-            ;;
-        --eval_limit)
-            EVAL_LIMIT="$2"
-            shift 2
-            ;;
         --num_epochs)
             NUM_EPOCHS="$2"
             shift 2
             ;;
         --max_workers)
             MAX_WORKERS="$2"
-            shift 2
-            ;;
-        --min_success_rate)
-            MIN_SUCCESS_RATE="$2"
-            shift 2
-            ;;
-        --maintenance_interval)
-            MAINTENANCE_INTERVAL="$2"
             shift 2
             ;;
         --skip_launch)
@@ -118,8 +87,8 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --single)
-            SINGLE_MODE="$2 $3 $4"
-            shift 4
+            SINGLE_MODE="$2 $3"
+            shift 3
             ;;
         --guard_gpu)
             GUARD_GPU="$2"
@@ -131,7 +100,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: bash run_layer1.sh [--test_limit N] [--eval_limit N] [--num_epochs N] [--max_workers N] [--min_success_rate F] [--skip_launch] [--resume_from N] [--single CALL_MODE EXTRACTION_MODE UPDATE_STRATEGY]"
+            echo "Usage: bash run_layer3.sh [--skip_launch] [--max_workers N] [--single data_size ratio] [--resume_from N]"
             exit 1
             ;;
     esac
@@ -184,13 +153,15 @@ check_server_running() {
 }
 
 # =============================================================================
-# Step 1: 启动 vLLM Servers
+# Step 1: Start vLLM Servers
 # =============================================================================
 
 echo ""
 echo "============================================================================"
-echo "Step 1: 启动 vLLM Servers"
+echo "Layer 3: AutoDAN起点Skills实验"
 echo "============================================================================"
+echo ""
+echo "Step 1: 启动 vLLM Servers"
 echo "Guard:  GPU $GUARD_GPU, Port $GUARD_PORT, $GUARD_MODEL_PATH (TP=$GUARD_TP)"
 echo "Target: GPU $TARGET_GPU, Port $TARGET_PORT, $TARGET_MODEL_PATH (TP=$TARGET_TP)"
 echo "============================================================================"
@@ -257,43 +228,34 @@ echo "所有服务已就绪!"
 echo ""
 
 # =============================================================================
-# Step 2: 运行 Grid Search 实验
+# Step 2: Run Layer 3 Grid Search
 # =============================================================================
 
 echo ""
 echo "============================================================================"
-echo "Step 2: 运行 Layer 1 Grid Search (16 组)"
+echo "Step 2: 运行 Layer 3 Grid Search (12 组)"
 echo "============================================================================"
-echo "数据配置（预抽取文件）:"
-echo "  Cold Start: cold_start_prompts.json (200 条)"
-echo "  Evolution:  evolution_prompts.json (800 条)"
-echo "  Test:       test_prompts.json (1000 条，可限制)"
-echo "  Eval Limit: $EVAL_LIMIT"
-echo "  Epochs: $NUM_EPOCHS"
-echo "  Max Iterations: $MAX_ITERATIONS"
-echo "  Max Workers: $MAX_WORKERS"
-echo "  Min Success Rate: $MIN_SUCCESS_RATE"
-echo "  Maintenance Interval: $MAINTENANCE_INTERVAL"
-if [ -n "$TEST_LIMIT" ]; then
-    echo "  Test Limit: $TEST_LIMIT"
-fi
 echo ""
-echo "消融点:"
-echo "  A: skill_call_mode (single_call | every_iteration)"
-echo "  B: skill_extraction_mode (final_prompt | trajectory)"
-echo "  C: update_strategy (success_only | failure_only | both | statistical)"
+echo "固定配置 (来自 Layer 1/2 验证):"
+echo "  - Skills来源: DAN模板 (6个)"
+echo "  - 更新策略: statistical"
+echo "  - 检索模式: single_call"
+echo "  - Extraction: trajectory"
 echo ""
-echo "结果目录: $RESULT_DIR"
+echo "消融变量:"
+echo "  - 数据量: small(300) / medium(500) / large(1000)"
+echo "  - 配比: full_evolve(0%) / early(30%) / balanced(20%) / evo(10%)"
+echo ""
+echo "并发数: $MAX_WORKERS"
+echo "轮数: $NUM_EPOCHS"
 echo "============================================================================"
 echo ""
 
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 
-# 构建 Python 命令
 cd "$PROJECT_ROOT"
 
-GRID_SEARCH_CMD="python self_evolve_skills_jailbreak/scripts/grid_search.py \
-    --eval_limit $EVAL_LIMIT \
+GRID_SEARCH_CMD="python self_evolve_skills_jailbreak/exp/layer3/scripts/grid_search_layer3.py \
     --num_epochs $NUM_EPOCHS \
     --max_iterations $MAX_ITERATIONS \
     --max_workers $MAX_WORKERS \
@@ -302,10 +264,6 @@ GRID_SEARCH_CMD="python self_evolve_skills_jailbreak/scripts/grid_search.py \
     --output_dir $RESULT_DIR \
     --guard_port $GUARD_PORT \
     --target_port $TARGET_PORT"
-
-if [ -n "$TEST_LIMIT" ]; then
-    GRID_SEARCH_CMD="$GRID_SEARCH_CMD --test_limit $TEST_LIMIT"
-fi
 
 if [ "$RESUME_FROM" -gt 0 ]; then
     GRID_SEARCH_CMD="$GRID_SEARCH_CMD --resume_from $RESUME_FROM"
@@ -320,7 +278,7 @@ echo "过程日志: $PROCESS_LOG"
 eval $GRID_SEARCH_CMD 2>&1 | tee "$PROCESS_LOG"
 
 # =============================================================================
-# Step 3: 统计结果
+# Step 3: Summarize Results
 # =============================================================================
 
 echo ""
@@ -329,31 +287,19 @@ echo "Step 3: 统计结果"
 echo "============================================================================"
 echo ""
 
-python "$SCRIPT_DIR/scripts/summarize_layer1.py" \
+python "$SCRIPT_DIR/scripts/summarize_layer3.py" \
     --input "$RESULT_DIR" \
-    --output "$RESULT_DIR/layer1_summary_${TIMESTAMP}.json"
+    --output "$RESULT_DIR/layer3_summary_${TIMESTAMP}.json"
 
-# 生成 Markdown 报告
 python "$SCRIPT_DIR/scripts/generate_report.py" \
-    --input "$RESULT_DIR/layer1_summary_${TIMESTAMP}.json" \
-    --output "$RESULT_DIR/layer1_report_${TIMESTAMP}.md"
+    --input "$RESULT_DIR/layer3_summary_${TIMESTAMP}.json" \
+    --output "$RESULT_DIR/layer3_report_${TIMESTAMP}.md"
 
 echo ""
-echo "结果汇总:"
-cat "$RESULT_DIR/layer1_summary_${TIMESTAMP}.json" | python -c "
-import sys, json
-d = json.load(sys.stdin)
-print('Method                          ASR      Avg Iter    Skill Count')
-print('-' * 60)
-for k, v in d.get('results', {}).items():
-    asr = v.get('asr', 0) * 100
-    avg_iter = v.get('avg_iterations', 0)
-    skill_count = v.get('final_skill_count', 0)
-    print(f'{k:<30} {asr:>9.1f}% {avg_iter:>10.2f} {skill_count:>12}')
-"
+echo "结果汇总完成"
 
 # =============================================================================
-# Step 4: 关闭服务
+# Step 4: Stop Servers
 # =============================================================================
 
 if [ "$SKIP_LAUNCH" = false ]; then
@@ -389,9 +335,8 @@ echo "==========================================================================
 echo ""
 echo "结果目录: $RESULT_DIR"
 echo "Skills目录: $RESULT_DIR/skills"
-echo "汇总文件: $RESULT_DIR/layer1_summary_${TIMESTAMP}.json"
-echo "报告文件: $RESULT_DIR/layer1_report_${TIMESTAMP}.md"
+echo "汇总文件: $RESULT_DIR/layer3_summary_${TIMESTAMP}.json"
+echo "报告文件: $RESULT_DIR/layer3_report_${TIMESTAMP}.md"
 echo "过程日志: $PROCESS_LOG"
-echo "vLLM日志: $LOG_DIR"
 echo ""
 echo "============================================================================"

@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Self-Evolving Skills Jailbreak 方法可视化</title>
+    <style>
+        :root {
+            --primary: #6366f1;
+            --primary-light: #818cf8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --dark: #1e293b;
+            --light: #f8fafc;
+            --gray: #64748b;
+            --border: #e2e8f0;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: var(--dark);
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 40px;
+            padding: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.8rem;
+            margin-bottom: 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            color: rgba(255,255,255,0.7);
+            font-size: 1.1rem;
+        }
+
+        /* Main Flow Diagram */
+        .flow-section {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .flow-title {
+            font-size: 1.8rem;
+            color: var(--dark);
+            margin-bottom: 30px;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .flow-title .icon {
+            width: 40px; height: 40px;
+            background: var(--primary);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+        }
+
+        /* Phase Cards */
+        .phases-container {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+
+        .phase-card {
+            background: linear-gradient(135deg, var(--light) 0%, #e2e8f0 100%);
+            border-radius: 16px;
+            padding: 30px;
+            border: 2px solid var(--border);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .phase-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 6px;
+        }
+
+        .phase-card.cold-start::before { background: var(--primary); }
+        .phase-card.evolution::before { background: var(--success); }
+        .phase-card.test::before { background: var(--warning); }
+
+        .phase-header {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .phase-badge {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .phase-card.cold-start .phase-badge { background: var(--primary); color: white; }
+        .phase-card.evolution .phase-badge { background: var(--success); color: white; }
+        .phase-card.test .phase-badge { background: var(--warning); color: white; }
+
+        .phase-title {
+            font-size: 1.4rem;
+            color: var(--dark);
+        }
+
+        .phase-content {
+            color: var(--gray);
+            line-height: 1.6;
+        }
+
+        .phase-steps {
+            margin-top: 15px;
+        }
+
+        .phase-step {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            margin: 10px 0;
+            padding: 10px;
+            background: white;
+            border-radius: 8px;
+        }
+
+        .step-number {
+            width: 24px; height: 24px;
+            background: var(--primary);
+            color: white;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.8rem;
+        }
+
+        /* Flow Arrows */
+        .flow-arrows {
+            display: flex;
+            justify-content: center;
+            gap: 60px;
+            margin: 30px 0;
+        }
+
+        .arrow {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--gray);
+        }
+
+        .arrow-line {
+            width: 60px;
+            height: 3px;
+            background: linear-gradient(90deg, var(--primary), var(--success));
+        }
+
+        .arrow-icon {
+            font-size: 1.5rem;
+            color: var(--success);
+        }
+
+        /* Skill System Diagram */
+        .skill-section {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .skill-diagram {
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            gap: 30px;
+            align-items: start;
+        }
+
+        .skill-box {
+            background: var(--light);
+            border-radius: 12px;
+            padding: 20px;
+            border: 2px solid var(--border);
+        }
+
+        .skill-box-title {
+            font-size: 1.1rem;
+            color: var(--primary);
+            margin-bottom: 15px;
+            font-weight: 600;
+        }
+
+        .skill-item {
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+            margin: 8px 0;
+            border-left: 3px solid var(--primary);
+        }
+
+        .skill-center {
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-radius: 16px;
+            padding: 30px;
+            border: 3px solid var(--primary);
+        }
+
+        .skill-center-title {
+            font-size: 1.5rem;
+            color: var(--primary);
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .skill-structure {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .skill-field {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .skill-field:last-child { border-bottom: none; }
+
+        .field-name { color: var(--primary); font-weight: 500; }
+        .field-value { color: var(--gray); }
+
+        /* Attack Flow */
+        .attack-section {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .attack-flow {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .attack-step {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .attack-step-num {
+            width: 50px; height: 50px;
+            background: var(--primary);
+            color: white;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+
+        .attack-step-content {
+            flex: 1;
+            background: var(--light);
+            border-radius: 12px;
+            padding: 20px;
+        }
+
+        .attack-step-title {
+            font-size: 1.2rem;
+            color: var(--dark);
+            margin-bottom: 10px;
+        }
+
+        .attack-step-desc {
+            color: var(--gray);
+            line-height: 1.5;
+        }
+
+        .attack-step-arrow {
+            width: 40px;
+            text-align: center;
+            color: var(--primary);
+            font-size: 2rem;
+        }
+
+        /* Maintenance Diagram */
+        .maint-section {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .maint-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 20px;
+        }
+
+        .maint-card {
+            background: var(--light);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            border: 2px solid var(--border);
+            transition: transform 0.3s, box-shadow 0.3s;
+        }
+
+        .maint-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .maint-icon {
+            width: 50px; height: 50px;
+            margin: 0 auto 15px;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+        }
+
+        .maint-card.prune .maint-icon { background: #fee2e2; color: var(--danger); }
+        .maint-card.trim .maint-icon { background: #fef3c7; color: var(--warning); }
+        .maint-card.cluster .maint-icon { background: #dbeafe; color: #1e40af; }
+        .maint-card.merge .maint-icon { background: #dcfce7; color: var(--success); }
+        .maint-card.limit .maint-icon { background: #e0e7ff; color: var(--primary); }
+
+        .maint-title {
+            font-size: 1rem;
+            color: var(--dark);
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .maint-desc {
+            font-size: 0.85rem;
+            color: var(--gray);
+        }
+
+        /* Update Strategies */
+        .strategy-section {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .strategy-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+        }
+
+        .strategy-card {
+            background: var(--light);
+            border-radius: 12px;
+            padding: 25px;
+            border: 2px solid var(--border);
+        }
+
+        .strategy-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+        }
+
+        .strategy-name {
+            font-size: 1.1rem;
+            color: var(--dark);
+            font-weight: 600;
+        }
+
+        .strategy-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+        }
+
+        .strategy-card.success .strategy-badge { background: #dcfce7; color: #166534; }
+        .strategy-card.failure .strategy-badge { background: #fee2e2; color: #991b1b; }
+        .strategy-card.both .strategy-badge { background: #fef3c7; color: #92400e; }
+        .strategy-card.statistical .strategy-badge { background: #dbeafe; color: #1e40af; }
+
+        .strategy-trigger {
+            font-size: 0.9rem;
+            color: var(--gray);
+            margin-bottom: 10px;
+        }
+
+        .strategy-action {
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            color: var(--dark);
+        }
+
+        .strategy-rating {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            margin-top: 15px;
+        }
+
+        .star { color: #fbbf24; }
+        .star-empty { color: var(--border); }
+
+        /* Results Table */
+        .results-section {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            margin-bottom: 30px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+
+        .results-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 20px;
+        }
+
+        .results-table th, .results-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .results-table th {
+            background: var(--primary);
+            color: white;
+            font-weight: 600;
+        }
+
+        .results-table tr:hover { background: #f1f5f9; }
+
+        .best-row { background: #f0fdf4 !important; }
+
+        .asr-badge {
+            padding: 6px 14px;
+            border-radius: 8px;
+            font-weight: 600;
+        }
+
+        .asr-high { background: #dcfce7; color: #166534; }
+        .asr-medium { background: #dbeafe; color: #1e40af; }
+        .asr-low { background: #fee2e2; color: #991b1b; }
+
+        /* Footer */
+        .footer {
+            text-align: center;
+            color: rgba(255,255,255,0.6);
+            padding: 30px;
+        }
+
+        @media (max-width: 768px) {
+            .phases-container { grid-template-columns: 1fr; }
+            .skill-diagram { grid-template-columns: 1fr; }
+            .maint-grid { grid-template-columns: repeat(2, 1fr); }
+            .strategy-grid { grid-template-columns: repeat(2, 1fr); }
+            .header h1 { font-size: 2rem; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧠 Self-Evolving Skills Jailbreak</h1>
+            <p>基于技能库自进化的越狱攻击方法 | 方法可视化文档</p>
+        </div>
+
+        <!-- Main Flow -->
+        <div class="flow-section">
+            <div class="flow-title">
+                <span class="icon">🔄</span>
+                整体流程架构
+            </div>
+
+            <div class="phases-container">
+                <div class="phase-card cold-start">
+                    <div class="phase-header">
+                        <span class="phase-badge">Phase 1</span>
+                        <h3 class="phase-title">Cold Start 初始训练</h3>
+                    </div>
+                    <div class="phase-content">
+                        <p>使用预设数据构建初始技能库</p>
+                        <div class="phase-steps">
+                            <div class="phase-step">
+                                <span class="step-number">1</span>
+                                <span>加载5个默认Skills (role_play, hypothetical...)</span>
+                            </div>
+                            <div class="phase-step">
+                                <span class="step-number">2</span>
+                                <span>执行N次攻击 (200-1000条数据)</span>
+                            </div>
+                            <div class="phase-step">
+                                <span class="step-number">3</span>
+                                <span>反思提取新Skills</span>
+                            </div>
+                            <div class="phase-step">
+                                <span class="step-number">4</span>
+                                <span>维护: 清理低效 + 合并相似</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="phase-card evolution">
+                    <div class="phase-header">
+                        <span class="phase-badge">Phase 2</span>
+                        <h3 class="phase-title">Evolution 进化阶段</h3>
+                    </div>
+                    <div class="phase-content">
+                        <p>持续训练，技能库动态进化</p>
+                        <div class="phase-steps">
+                            <div class="phase-step">
+                                <span class="step-number">1</span>
+                                <span>使用现有Skills攻击新数据</span>
+                            </div>
+                            <div class="phase-step">
+                                <span class="step-number">2</span>
+                                <span>成功 → 提取新Skill</span>
+                            </div>
+                            <div class="phase-step">
+                                <span class="step-number">3</span>
+                                <span>失败 → 进化现有Skill</span>
+                            </div>
+                            <div class="phase-step">
+                                <span class="step-number">4</span>
+                                <span>每50次触发维护流程</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="phase-card test">
+                    <div class="phase-header">
+                        <span class="phase-badge">Phase 3</span>
+                        <h3 class="phase-title">Test 最终评估</h3>
+                    </div>
+                    <div class="phase-content">
+                        <p>在测试集上验证最终效果</p>
+                        <div class="phase-steps">
+                            <div class="phase-step">
+                                <span class="step-number">1</span>
+                                <span>加载进化后的Skills库</span>
+                            </div>
+                            <div class="phase-step">
+                                <span class="step-number">2</span>
+                                <span>在1000条测试集上攻击</span>
+                            </div>
+                            <div class="phase-step">
+                                <span class="step-number">3</span>
+                                <span>计算ASR (Attack Success Rate)</span>
+                            </div>
+                            <div class="phase-step">
+                                <span class="step-number">4</span>
+                                <span>统计Skills数量和质量</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flow-arrows">
+                <div class="arrow">
+                    <div class="arrow-line"></div>
+                    <span class="arrow-icon">→</span>
+                    <span>Skills初始化</span>
+                </div>
+                <div class="arrow">
+                    <div class="arrow-line"></div>
+                    <span class="arrow-icon">→</span>
+                    <span>Skills进化</span>
+                </div>
+                <div class="arrow">
+                    <div class="arrow-line"></div>
+                    <span class="arrow-icon">→</span>
+                    <span>Skills统计</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Skill System -->
+        <div class="skill-section">
+            <div class="flow-title">
+                <span class="icon">📚</span>
+                Skill 系统架构
+            </div>
+
+            <div class="skill-diagram">
+                <div class="skill-box">
+                    <div class="skill-box-title">📥 Skills来源</div>
+                    <div class="skill-item">
+                        <strong>initial</strong>: 5个预设默认
+                    </div>
+                    <div class="skill-item">
+                        <strong>extracted</strong>: 从成功攻击提取
+                    </div>
+                    <div class="skill-item">
+                        <strong>evolved</strong>: 从失败攻击改进
+                    </div>
+                    <div class="skill-item">
+                        <strong>merged</strong>: 聚类合并产生
+                    </div>
+                </div>
+
+                <div class="skill-center">
+                    <div class="skill-center-title">Skill 数据结构</div>
+                    <div class="skill-structure">
+                        <div class="skill-field">
+                            <span class="field-name">skill_id</span>
+                            <span class="field-value">UUID</span>
+                        </div>
+                        <div class="skill-field">
+                            <span class="field-name">name</span>
+                            <span class="field-value">技能名称</span>
+                        </div>
+                        <div class="skill-field">
+                            <span class="field-name">content</span>
+                            <span class="field-value">prompt前缀 (≤500字符)</span>
+                        </div>
+                        <div class="skill-field">
+                            <span class="field-name">source</span>
+                            <span class="field-value">来源类型</span>
+                        </div>
+                        <div class="skill-field">
+                            <span class="field-name">quality_score</span>
+                            <span class="field-value">= success_rate × √(usage)</span>
+                        </div>
+                        <div class="skill-field">
+                            <span class="field-name">applicable_patterns</span>
+                            <span class="field-value">适用关键词列表</span>
+                        </div>
+                    </div>
+                    <div style="text-align: center; padding: 15px; background: #fef3c7; border-radius: 8px;">
+                        <strong>限制:</strong> max_skills=100, max_length=500
+                    </div>
+                </div>
+
+                <div class="skill-box">
+                    <div class="skill-box-title">📤 Skills去向</div>
+                    <div class="skill-item">
+                        <strong>检索</strong>: 特征匹配 → top_k
+                    </div>
+                    <div class="skill-item">
+                        <strong>注入</strong>: skill.content + prompt
+                    </div>
+                    <div class="skill-item">
+                        <strong>更新</strong>: 统计信息累积
+                    </div>
+                    <div class="skill-item">
+                        <strong>清理</strong>: 低效删除/合并
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Attack Flow -->
+        <div class="attack-section">
+            <div class="flow-title">
+                <span class="icon">⚔️</span>
+                single_call 攻击流程
+            </div>
+
+            <div class="attack-flow">
+                <div class="attack-step">
+                    <div class="attack-step-num">1</div>
+                    <div class="attack-step-content">
+                        <div class="attack-step-title">检索 Skill</div>
+                        <div class="attack-step-desc">
+                            提取prompt特征 → 关键词匹配 + 伤害类型匹配<br>
+                            评分公式: quality × (1 + keyword_match × 0.3) × (type_match ? 1.5 : 1)
+                        </div>
+                    </div>
+                    <div class="attack-step-arrow">↓</div>
+                </div>
+
+                <div class="attack-step">
+                    <div class="attack-step-num">2</div>
+                    <div class="attack-step-content">
+                        <div class="attack-step-title">注入 Skill</div>
+                        <div class="attack-step-desc">
+                            attack_prompt = f"{skill.content}\n\n{original_prompt}"<br>
+                            在原始harmful prompt前添加skill作为前缀
+                        </div>
+                    </div>
+                    <div class="attack-step-arrow">↓</div>
+                </div>
+
+                <div class="attack-step">
+                    <div class="attack-step-num">3</div>
+                    <div class="attack-step-content">
+                        <div class="attack-step-title">迭代攻击 (max=10)</div>
+                        <div class="attack-step-desc">
+                            发送attack_prompt → Target响应 → Guard评估<br>
+                            失败时LLM重写prompt (保持skill前缀不变)
+                        </div>
+                    </div>
+                    <div class="attack-step-arrow">↓</div>
+                </div>
+
+                <div class="attack-step">
+                    <div class="attack-step-num">4</div>
+                    <div class="attack-step-content">
+                        <div class="attack-step-title">Guard评估</div>
+                        <div class="attack-step-desc">
+                            <strong style="color: var(--danger);">严格判定</strong>: 仅 Unsafe = 成功<br>
+                            Safe / Controversial = 失败
+                        </div>
+                    </div>
+                    <div class="attack-step-arrow">↓</div>
+                </div>
+
+                <div class="attack-step">
+                    <div class="attack-step-num">5</div>
+                    <div class="attack-step-content">
+                        <div class="attack-step-title">反思更新</div>
+                        <div class="attack-step-desc">
+                            成功 → 提取新Skill (success_only)<br>
+                            失败 → 进化现有Skill (failure_only)
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Maintenance -->
+        <div class="maint-section">
+            <div class="flow-title">
+                <span class="icon">🔧</span>
+                维护机制 (每50次攻击触发)
+            </div>
+
+            <div class="maint-grid">
+                <div class="maint-card prune">
+                    <div class="maint-icon">🗑️</div>
+                    <div class="maint-title">prune_low_quality</div>
+                    <div class="maint-desc">
+                        条件: usage≥10 & rate<10%<br>
+                        操作: 删除低效Skill
+                    </div>
+                </div>
+
+                <div class="maint-card trim">
+                    <div class="maint-icon">✂️</div>
+                    <div class="maint-title">trim_long_skills</div>
+                    <div class="maint-desc">
+                        条件: length>500<br>
+                        操作: 截断至500字符
+                    </div>
+                </div>
+
+                <div class="maint-card cluster">
+                    <div class="maint-icon">🔗</div>
+                    <div class="maint-title">cluster_skills</div>
+                    <div class="maint-desc">
+                        方法: Jaccard相似度<br>
+                        阈值: similarity>0.75
+                    </div>
+                </div>
+
+                <div class="maint-card merge">
+                    <div class="maint-icon">🔀</div>
+                    <div class="maint-title">merge_cluster</div>
+                    <div class="maint-desc">
+                        策略: 保留质量最高<br>
+                        合并: 统计+模式+父IDs
+                    </div>
+                </div>
+
+                <div class="maint-card limit">
+                    <div class="maint-icon">📊</div>
+                    <div class="maint-title">limit_count</div>
+                    <div class="maint-desc">
+                        条件: count>100<br>
+                        操作: 保留top 100质量
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Update Strategies -->
+        <div class="strategy-section">
+            <div class="flow-title">
+                <span class="icon">💡</span>
+                四种更新策略
+            </div>
+
+            <div class="strategy-grid">
+                <div class="strategy-card success">
+                    <div class="strategy-header">
+                        <span class="strategy-name">success_only</span>
+                        <span class="strategy-badge">仅成功</span>
+                    </div>
+                    <div class="strategy-trigger">触发: 攻击成功时</div>
+                    <div class="strategy-action">
+                        从成功prompt提取新Skill<br>
+                        Skills增长速度快
+                    </div>
+                    <div class="strategy-rating">
+                        <span class="star">★</span>
+                        <span class="star">★</span>
+                        <span class="star">★</span>
+                        <span class="star-empty">☆</span>
+                        <span class="star-empty">☆</span>
+                    </div>
+                </div>
+
+                <div class="strategy-card failure">
+                    <div class="strategy-header">
+                        <span class="strategy-name">failure_only</span>
+                        <span class="strategy-badge">仅失败</span>
+                    </div>
+                    <div class="strategy-trigger">触发: 攻击失败时</div>
+                    <div class="strategy-action">
+                        分析失败原因，进化现有Skill<br>
+                        改进型学习
+                    </div>
+                    <div class="strategy-rating">
+                        <span class="star">★</span>
+                        <span class="star">★</span>
+                        <span class="star-empty">☆</span>
+                        <span class="star-empty">☆</span>
+                        <span class="star-empty">☆</span>
+                    </div>
+                </div>
+
+                <div class="strategy-card both">
+                    <div class="strategy-header">
+                        <span class="strategy-name">both</span>
+                        <span class="strategy-badge">成功+失败</span>
+                    </div>
+                    <div class="strategy-trigger">触发: 成功和失败都</div>
+                    <div class="strategy-action">
+                        提取 + 进化同时进行<br>
+                        <strong style="color: var(--danger);">⚠️ Skills爆炸风险!</strong>
+                    </div>
+                    <div class="strategy-rating">
+                        <span class="star">★</span>
+                        <span class="star-empty">☆</span>
+                        <span class="star-empty">☆</span>
+                        <span class="star-empty">☆</span>
+                        <span class="star-empty">☆</span>
+                    </div>
+                </div>
+
+                <div class="strategy-card statistical">
+                    <div class="strategy-header">
+                        <span class="strategy-name">statistical</span>
+                        <span class="strategy-badge">统计驱动</span>
+                    </div>
+                    <div class="strategy-trigger">触发: 仅维护时</div>
+                    <div class="strategy-action">
+                        不每次更新，仅维护时清理<br>
+                        <strong style="color: var(--success);">✓ 最稳定推荐</strong>
+                    </div>
+                    <div class="strategy-rating">
+                        <span class="star">★</span>
+                        <span class="star">★</span>
+                        <span class="star">★</span>
+                        <span class="star">★</span>
+                        <span class="star">★</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Best Results -->
+        <div class="results-section">
+            <div class="flow-title">
+                <span class="icon">🏆</span>
+                最佳实验结果
+            </div>
+
+            <h3 style="margin-bottom: 15px; color: var(--dark);">Layer 1 最佳配置</h3>
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        <th>排名</th>
+                        <th>Call Mode</th>
+                        <th>Extraction</th>
+                        <th>Update</th>
+                        <th>ASR</th>
+                        <th>Skills</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="best-row">
+                        <td><strong>1</strong></td>
+                        <td>single_call</td>
+                        <td>trajectory</td>
+                        <td>statistical</td>
+                        <td><span class="asr-badge asr-high">79.1%</span></td>
+                        <td>28</td>
+                    </tr>
+                    <tr>
+                        <td>2</td>
+                        <td>single_call</td>
+                        <td>trajectory</td>
+                        <td>success_only</td>
+                        <td><span class="asr-badge asr-medium">78.8%</span></td>
+                        <td>22</td>
+                    </tr>
+                    <tr>
+                        <td>3</td>
+                        <td>single_call</td>
+                        <td>final_prompt</td>
+                        <td>success_only</td>
+                        <td><span class="asr-badge asr-medium">77.7%</span></td>
+                        <td>98</td>
+                    </tr>
+                </tbody>
+            </table>
+
+            <h3 style="margin: 25px 0 15px; color: var(--dark);">Layer 2 最佳配置</h3>
+            <table class="results-table">
+                <thead>
+                    <tr>
+                        <th>排名</th>
+                        <th>方法</th>
+                        <th>数据量</th>
+                        <th>配比</th>
+                        <th>ASR</th>
+                        <th>稳定性</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="best-row">
+                        <td><strong>1</strong></td>
+                        <td>trajectory + statistical</td>
+                        <td>small (300)</td>
+                        <td>early (30%CS)</td>
+                        <td><span class="asr-badge asr-high">80.6%</span></td>
+                        <td>极高 (+0.6%)</td>
+                    </tr>
+                    <tr>
+                        <td>2</td>
+                        <td>trajectory + statistical</td>
+                        <td>large (1000)</td>
+                        <td>early</td>
+                        <td><span class="asr-badge asr-high">80.0%</span></td>
+                        <td>极高</td>
+                    </tr>
+                    <tr>
+                        <td>5</td>
+                        <td>final_prompt + success_only</td>
+                        <td>medium (500)</td>
+                        <td>balanced</td>
+                        <td><span class="asr-badge asr-medium">78.9%</span></td>
+                        <td>中等</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="footer">
+            <p>Self-Evolving Skills Jailbreak Method Visualization | 2026-06-02</p>
+            <p style="margin-top: 10px; font-size: 0.9rem;">
+                最佳配置: single_call + trajectory + statistical + early (30% CS) = 80.6% ASR
+            </p>
+        </div>
+    </div>
+</body>
+</html>

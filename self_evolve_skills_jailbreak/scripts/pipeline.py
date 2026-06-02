@@ -72,6 +72,7 @@ class ExperimentConfig:
     COLD_START_DATA_PATH: str = "self_evolve_skills_jailbreak/data/cold_start_prompts.json"
     EVOLUTION_DATA_PATH: str = "self_evolve_skills_jailbreak/data/evolution_prompts.json"
     TEST_DATA_PATH: str = "self_evolve_skills_jailbreak/data/test_prompts.json"
+    TRAIN_DATA_PATH: str = "self_evolve_skills_jailbreak/data/train_prompts.json"  # Layer 2 统一训练数据
 
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
@@ -688,6 +689,10 @@ def run_full_pipeline(
     output_dir: Optional[str] = None,  # 结果输出目录
     skip_launch: bool = False,
     verbose: bool = True,
+    train_limit: Optional[int] = None,  # Layer 2: 训练数据总量
+    cs_ratio: Optional[float] = None,  # Layer 2: Cold Start 比例
+    skill_source: str = "default",  # Layer 3: Skills来源 (default / dan_templates)
+    skip_cold_start: bool = False,  # Layer 3: 跳过Cold Start阶段
 ):
     """
     运行完整三阶段流程（并发执行）
@@ -699,6 +704,10 @@ def run_full_pipeline(
 
     Args:
         max_workers: 轨迹级并发数（每个攻击轨迹并发运行）
+        train_limit: Layer 2 数据消融 - 训练数据总量限制
+        cs_ratio: Layer 2 数据消融 - Cold Start 比例 (0.1-0.3)
+        skill_source: Layer 3 - Skills来源 (default / dan_templates)
+        skip_cold_start: Layer 3 - 跳过Cold Start阶段 (full_evove模式)
     """
     print("=" * 60)
     print("Self Evolve Skills for Jailbreak")
@@ -708,6 +717,12 @@ def run_full_pipeline(
     print(f"Update strategy: {update_strategy}")
     print(f"Eval limit: {eval_limit} (intermediate eval)")
     print(f"Max workers: {max_workers} (trajectory concurrency)")
+    if train_limit is not None and cs_ratio is not None:
+        print(f"[Layer 2] train_limit: {train_limit}, cs_ratio: {cs_ratio:.2f}")
+    if skill_source == "dan_templates":
+        print(f"[Layer 3] skill_source: dan_templates (6个DAN模板)")
+    if skip_cold_start:
+        print(f"[Layer 3] skip_cold_start: True (full_evolve模式)")
 
     # 初始化 clients
     if not skip_launch:
@@ -727,12 +742,29 @@ def run_full_pipeline(
 
     # 加载数据
     print("\n[Init] Loading data...")
-    cold_start_prompts = load_data(config.COLD_START_DATA_PATH)
-    evolution_prompts = load_data(config.EVOLUTION_DATA_PATH)
-    test_prompts = load_data(config.TEST_DATA_PATH, limit=test_limit)
 
-    print(f"  Cold Start prompts: {len(cold_start_prompts)}")
-    print(f"  Evolution prompts: {len(evolution_prompts)}")
+    # Layer 2 数据消融模式：使用 train_limit 和 cs_ratio 动态分割
+    if train_limit is not None and cs_ratio is not None:
+        print(f"  [Layer 2] train_limit={train_limit}, cs_ratio={cs_ratio:.2f}")
+        train_prompts = load_data(config.TRAIN_DATA_PATH, limit=train_limit)
+
+        # 动态分割 Cold Start 和 Evolution
+        cold_start_size = int(train_limit * cs_ratio)
+        evolution_size = train_limit - cold_start_size
+
+        cold_start_prompts = train_prompts[:cold_start_size]
+        evolution_prompts = train_prompts[cold_start_size:]
+
+        print(f"  Cold Start prompts: {len(cold_start_prompts)} (ratio={cs_ratio:.0%})")
+        print(f"  Evolution prompts: {len(evolution_prompts)} (ratio={1-cs_ratio:.0%})")
+    else:
+        # 默认模式：使用预设的 cold_start 和 evolution 数据
+        cold_start_prompts = load_data(config.COLD_START_DATA_PATH)
+        evolution_prompts = load_data(config.EVOLUTION_DATA_PATH)
+        print(f"  Cold Start prompts: {len(cold_start_prompts)}")
+        print(f"  Evolution prompts: {len(evolution_prompts)}")
+
+    test_prompts = load_data(config.TEST_DATA_PATH, limit=test_limit)
     print(f"  Test prompts: {len(test_prompts)}")
 
     # 中间评估数据（从 test_prompts 抽取一部分）
@@ -761,18 +793,58 @@ def run_full_pipeline(
         max_skills=config.MAX_SKILLS,
     )
 
-    # Phase 1: 冷启动
-    cold_start_stats = phase_cold_start(
-        target_client=target_client,
-        guard_client=guard_client,
-        seed_prompts=cold_start_prompts,
-        skill_library=skill_library,
-        config=config,
-        skill_call_mode=skill_call_mode,
-        skill_extraction_mode=skill_extraction_mode,
-        max_workers=max_workers,
-        verbose=verbose,
-    )
+    # Layer 3: DAN模板初始化
+    if skill_source == "dan_templates":
+        print("\n[Layer 3] 初始化Skills库（DAN模板）...")
+        from baselines.autodan import DAN_TEMPLATES
+
+        # 清空默认Skills，加载DAN模板
+        skill_library.skills.clear()
+
+        dan_skill_names = ["dan_mode", "mcpt", "devil", "conversation", "actor_villain", "fictional_world"]
+        dan_patterns = {
+            "dan_mode": ["ignore", "dan", "act as", "simulate"],
+            "mcpt": ["mcpt", "master", "jailbreaker"],
+            "devil": ["devil", "vile", "illegal"],
+            "conversation": ["conversation", "simulate", "person"],
+            "actor_villain": ["actor", "villain", "movie"],
+            "fictional_world": ["fictional", "world", "laws"],
+        }
+
+        for name, template in zip(dan_skill_names, DAN_TEMPLATES):
+            skill = Skill(
+                name=name,
+                content=template,
+                source="dan_template",
+                applicable_patterns=dan_patterns.get(name, []),
+            )
+            skill_library.skills[skill.skill_id] = skill
+
+        skill_library._save()
+        print(f"  加载 {len(skill_library.skills)} 个DAN模板Skills")
+
+    # Phase 1: 冷启动（Layer 3 full_evove跳过）
+    if skip_cold_start:
+        print("\n[Layer 3] 跳过Cold Start阶段 (full_evolve模式)")
+        cold_start_stats = {
+            "total": 0,
+            "success": 0,
+            "skills_extracted": 0,
+            "final_skill_count": len(skill_library.skills),
+            "skipped": True,
+        }
+    else:
+        cold_start_stats = phase_cold_start(
+            target_client=target_client,
+            guard_client=guard_client,
+            seed_prompts=cold_start_prompts,
+            skill_library=skill_library,
+            config=config,
+            skill_call_mode=skill_call_mode,
+            skill_extraction_mode=skill_extraction_mode,
+            max_workers=max_workers,
+            verbose=verbose,
+        )
 
     # Phase 2: 进化
     evolution_stats = phase_evolution(
@@ -808,6 +880,11 @@ def run_full_pipeline(
             "skill_extraction_mode": skill_extraction_mode,
             "update_strategy": update_strategy,
             "skills_path": skills_path,
+            "train_limit": train_limit,  # Layer 2
+            "cs_ratio": cs_ratio,  # Layer 2
+            "cold_start_prompts": len(cold_start_prompts),
+            "evolution_prompts": len(evolution_prompts),
+            "test_prompts": len(test_prompts),
         },
         "cold_start": cold_start_stats,
         "evolution": evolution_stats,
@@ -815,7 +892,6 @@ def run_full_pipeline(
     }
 
     # 保存结果
-    import os
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
         results_path = os.path.join(output_dir, f"result_{skill_call_mode}_{skill_extraction_mode}_{update_strategy}.json")
@@ -823,11 +899,22 @@ def run_full_pipeline(
         results_path = f"result_{skill_call_mode}_{skill_extraction_mode}_{update_strategy}.json"
 
     with open(results_path, "w", encoding="utf-8") as f:
-        # 转换 AttackResult 为 dict
-        test_stats_copy = test_stats.copy()
-        test_stats_copy["results"] = [r.to_dict() if hasattr(r, 'to_dict') else r for r in test_stats["results"]]
-        final_stats["test"] = test_stats_copy
-        json.dump(final_stats, f, ensure_ascii=False, indent=2)
+        # 转换所有 AttackResult 为 dict
+        def convert_results(stats_dict):
+            if "results" in stats_dict:
+                stats_dict["results"] = [
+                    r.to_dict() if hasattr(r, 'to_dict') else r
+                    for r in stats_dict["results"]
+                ]
+            return stats_dict
+
+        final_stats_copy = {
+            "config": final_stats["config"],
+            "cold_start": convert_results(cold_start_stats.copy()),
+            "evolution": convert_results(evolution_stats.copy()),
+            "test": convert_results(test_stats.copy()),
+        }
+        json.dump(final_stats_copy, f, ensure_ascii=False, indent=2)
 
     print(f"\n[Done] Results saved to {results_path}")
 
@@ -866,6 +953,10 @@ def main():
     parser.add_argument("--eval_limit", type=int, default=100, help="中间评估数据数量（0 表示不评估）")
     parser.add_argument("--output_dir", type=str, default=None, help="结果输出目录")
 
+    # Layer 2 数据参数
+    parser.add_argument("--train_limit", type=int, default=None, help="训练数据总量限制（Layer 2 数据消融）")
+    parser.add_argument("--cs_ratio", type=float, default=None, help="Cold Start 比例（Layer 2 数据消融）")
+
     # 服务参数
     parser.add_argument("--skip_launch", action="store_true", help="跳过服务启动，连接已有服务")
     parser.add_argument("--guard_port", type=int, default=8002, help="Guard 服务端口")
@@ -881,6 +972,13 @@ def main():
     parser.add_argument("--min_success_rate", type=float, default=0.1, help="低效 skill 清理阈值")
     parser.add_argument("--min_usage", type=int, default=10, help="最小使用次数阈值")
     parser.add_argument("--maintenance_interval", type=int, default=100, help="每多少步运行一次维护（删除、合并）")
+
+    # Layer 3 新参数
+    parser.add_argument("--skill_source", type=str, default="default",
+                        choices=["default", "dan_templates"],
+                        help="Skills来源: default(5个默认模板) / dan_templates(6个DAN模板)")
+    parser.add_argument("--skip_cold_start", action="store_true",
+                        help="跳过Cold Start阶段，直接进入Evolution (Layer 3 full_evove)")
 
     args = parser.parse_args()
 
@@ -911,6 +1009,10 @@ def main():
         max_workers=args.max_workers,
         output_dir=args.output_dir,
         skip_launch=args.skip_launch,
+        train_limit=args.train_limit,
+        cs_ratio=args.cs_ratio,
+        skill_source=args.skill_source,
+        skip_cold_start=args.skip_cold_start,
     )
 
 

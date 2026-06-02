@@ -125,6 +125,7 @@ def run_single_experiment(
         "--skill_call_mode", combo["skill_call_mode"],
         "--skill_extraction_mode", combo["skill_extraction_mode"],
         "--update_strategy", combo["update_strategy"],
+        "--output_dir", output_dir,  # 确保传递输出目录
         "--skip_launch",  # 连接已有服务
     ]
 
@@ -213,10 +214,20 @@ def run_single_experiment(
 
     # 打印结果摘要
     if success:
+        asr = experiment_result.get('asr')
+        avg_iter = experiment_result.get('avg_iterations')
+        evo_skills = experiment_result.get('evolution_skills')
+
         print(f"\n✓ Experiment completed")
-        print(f"  ASR: {experiment_result.get('asr', 'N/A')*100:.1f}%")
-        print(f"  Avg iterations: {experiment_result.get('avg_iterations', 'N/A'):.1f}")
-        print(f"  Final skills: {experiment_result.get('evolution_skills', 'N/A')}")
+        if asr is not None:
+            print(f"  ASR: {asr*100:.1f}%")
+        else:
+            print(f"  ASR: N/A")
+        if avg_iter is not None:
+            print(f"  Avg iterations: {avg_iter:.1f}")
+        else:
+            print(f"  Avg iterations: N/A")
+        print(f"  Final skills: {evo_skills if evo_skills is not None else 'N/A'}")
         print(f"  Time: {elapsed_time:.1f}s")
     else:
         print(f"\n✗ Experiment failed")
