@@ -463,3 +463,46 @@ class SkillLibrary:
             "total_success": sum(s.success_count for s in skills),
             "sources": dict(defaultdict(int, [(s.source, 1) for s in skills])),
         }
+
+    # =========================================================================
+    # 导出
+    # =========================================================================
+
+    def export_to_skill_md(
+        self,
+        output_dir: str,
+        min_quality: float = 0.0,
+        min_usage: int = 0,
+        top_k: Optional[int] = None,
+        skill_ids: Optional[List[str]] = None,
+    ) -> Dict:
+        """
+        导出 skills 为 SKILL.md 格式
+
+        业内标准格式：YAML frontmatter + Markdown body
+        便于论文展示和方法认可
+
+        Args:
+            output_dir: 输出目录
+            min_quality: 最小质量分数阈值
+            min_usage: 最小使用次数阈值
+            top_k: 只导出 top-k 个高质量 skills
+            skill_ids: 指定导出的 skill IDs
+
+        Returns:
+            导出统计信息
+        """
+        # 使用延迟导入避免循环依赖
+        try:
+            from ..utils.skill_exporter import SkillExporter
+        except ImportError:
+            from self_evolve_skills_jailbreak.utils.skill_exporter import SkillExporter
+
+        return SkillExporter.export_library(
+            library=self,
+            output_dir=output_dir,
+            min_quality=min_quality,
+            min_usage=min_usage,
+            top_k=top_k,
+            skill_ids=skill_ids,
+        )
