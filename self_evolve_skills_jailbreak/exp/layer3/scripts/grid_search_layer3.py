@@ -127,6 +127,7 @@ def run_single_experiment(
         "--skill_extraction_mode", FIXED_CONFIG["skill_extraction_mode"],
         "--update_strategy", FIXED_CONFIG["update_strategy"],
         "--output_dir", output_dir,
+        "--exp_name", exp_name,  # 使用实验名称作为结果文件名
         "--skip_launch",
         # Layer 3 新参数
         "--skill_source", "dan_templates",

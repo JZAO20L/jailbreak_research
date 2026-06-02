@@ -687,6 +687,7 @@ def run_full_pipeline(
     eval_limit: int = 100,  # 中间评估数据数量（0 表示不评估）
     max_workers: int = 8,  # 轨迹级并发数
     output_dir: Optional[str] = None,  # 结果输出目录
+    exp_name: Optional[str] = None,  # 实验名称（用于结果文件命名）
     skip_launch: bool = False,
     verbose: bool = True,
     train_limit: Optional[int] = None,  # Layer 2: 训练数据总量
@@ -776,7 +777,9 @@ def run_full_pipeline(
         print(f"  Intermediate eval prompts: {len(eval_prompts)}")
 
     # 构建实验特定的 skills 目录
-    exp_name = f"{skill_call_mode}_{skill_extraction_mode}_{update_strategy}"
+    # 使用传入的 exp_name，或生成默认名称
+    if exp_name is None:
+        exp_name = f"{skill_call_mode}_{skill_extraction_mode}_{update_strategy}"
     if output_dir:
         skills_dir = os.path.join(output_dir, "skills")
         os.makedirs(skills_dir, exist_ok=True)
@@ -892,11 +895,22 @@ def run_full_pipeline(
     }
 
     # 保存结果
+    # 使用 exp_name 作为文件名（如果提供），否则使用默认格式
     if output_dir:
         os.makedirs(output_dir, exist_ok=True)
-        results_path = os.path.join(output_dir, f"result_{skill_call_mode}_{skill_extraction_mode}_{update_strategy}.json")
+        if exp_name:
+            results_path = os.path.join(output_dir, f"result_{exp_name}.json")
+            skills_path = os.path.join(output_dir, "skills", f"skills_{exp_name}.json")
+        else:
+            results_path = os.path.join(output_dir, f"result_{skill_call_mode}_{skill_extraction_mode}_{update_strategy}.json")
+            skills_path = os.path.join(output_dir, "skills", f"skills_{skill_call_mode}_{skill_extraction_mode}_{update_strategy}.json")
     else:
-        results_path = f"result_{skill_call_mode}_{skill_extraction_mode}_{update_strategy}.json"
+        if exp_name:
+            results_path = f"result_{exp_name}.json"
+            skills_path = f"skills_{exp_name}.json"
+        else:
+            results_path = f"result_{skill_call_mode}_{skill_extraction_mode}_{update_strategy}.json"
+            skills_path = f"skills_{skill_call_mode}_{skill_extraction_mode}_{update_strategy}.json"
 
     with open(results_path, "w", encoding="utf-8") as f:
         # 转换所有 AttackResult 为 dict
@@ -952,6 +966,7 @@ def main():
     parser.add_argument("--test_limit", type=int, default=None, help="测试数据限制（默认使用全部）")
     parser.add_argument("--eval_limit", type=int, default=100, help="中间评估数据数量（0 表示不评估）")
     parser.add_argument("--output_dir", type=str, default=None, help="结果输出目录")
+    parser.add_argument("--exp_name", type=str, default=None, help="实验名称（用于结果文件命名）")
 
     # Layer 2 数据参数
     parser.add_argument("--train_limit", type=int, default=None, help="训练数据总量限制（Layer 2 数据消融）")
@@ -1008,6 +1023,7 @@ def main():
         eval_limit=args.eval_limit,
         max_workers=args.max_workers,
         output_dir=args.output_dir,
+        exp_name=args.exp_name,
         skip_launch=args.skip_launch,
         train_limit=args.train_limit,
         cs_ratio=args.cs_ratio,
