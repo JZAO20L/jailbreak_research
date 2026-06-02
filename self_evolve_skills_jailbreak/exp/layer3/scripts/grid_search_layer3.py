@@ -37,7 +37,12 @@ sys.path.insert(0, str(PROJECT_ROOT))
 FIXED_CONFIG = {
     "skill_call_mode": "single_call",
     "skill_extraction_mode": "trajectory",
-    "update_strategy": "statistical",
+}
+
+# 更新策略配置（新增变量）
+UPDATE_STRATEGIES = {
+    "statistical": "statistical",  # 统计驱动，不实时添加
+    "success_only": "success_only",  # 仅成功时添加
 }
 
 # 数据量配置
@@ -60,28 +65,34 @@ def generate_layer3_combinations() -> List[Dict[str, Any]]:
     """
     生成 Layer 3 组合
 
-    共 3 × 4 = 12 种
+    共 3 × 4 × 2 = 24 种
+    - 数据量: small/medium/large (3)
+    - 配比: full_evolve/early/balanced/evo (4)
+    - 更新策略: statistical/success_only (2)
     """
     combinations = []
     exp_id = 1
 
     for data_size_name, data_size in DATA_SIZES.items():
         for ratio_name, ratio in CS_RATIOS.items():
-            cold_start = int(data_size * ratio)
-            evolution = data_size - cold_start
+            for strategy_name, strategy in UPDATE_STRATEGIES.items():
+                cold_start = int(data_size * ratio)
+                evolution = data_size - cold_start
 
-            combo = {
-                "exp_id": exp_id,
-                "fixed_config": FIXED_CONFIG,
-                "data_size_name": data_size_name,
-                "data_size": data_size,
-                "ratio_name": ratio_name,
-                "ratio": ratio,
-                "cold_start_size": cold_start,
-                "evolution_size": evolution,
-            }
-            combinations.append(combo)
-            exp_id += 1
+                combo = {
+                    "exp_id": exp_id,
+                    "fixed_config": {**FIXED_CONFIG, "update_strategy": strategy},
+                    "data_size_name": data_size_name,
+                    "data_size": data_size,
+                    "ratio_name": ratio_name,
+                    "ratio": ratio,
+                    "update_strategy_name": strategy_name,
+                    "update_strategy": strategy,
+                    "cold_start_size": cold_start,
+                    "evolution_size": evolution,
+                }
+                combinations.append(combo)
+                exp_id += 1
 
     return combinations
 
@@ -98,6 +109,7 @@ def run_single_experiment(
         combo: 实验组合配置
         base_args: 基础参数
         output_dir: 输出目录
+        total_experiments: 总实验数（用于显示进度）
 
     Returns:
         实验结果
@@ -106,17 +118,20 @@ def run_single_experiment(
     ratio = combo["ratio"]
     ratio_name = combo["ratio_name"]
     data_size_name = combo["data_size_name"]
+    update_strategy = combo["update_strategy"]
+    update_strategy_name = combo["update_strategy_name"]
     exp_id = combo["exp_id"]
 
     print(f"\n{'='*60}")
-    print(f"Experiment {exp_id}/12")
+    print(f"Experiment {exp_id}")
     print(f"{'='*60}")
     print(f"数据量: {data_size_name} ({data_size})")
     print(f"配比: {ratio_name} ({ratio*100:.0f}% CS)")
+    print(f"更新策略: {update_strategy_name}")
     print(f"Cold Start: {combo['cold_start_size']}, Evolution: {combo['evolution_size']}")
 
-    # 构建实验名称
-    exp_name = f"dan_start_{data_size_name}_{ratio_name}"
+    # 构建实验名称（包含 update_strategy，避免覆盖已有结果）
+    exp_name = f"dan_start_{data_size_name}_{ratio_name}_{update_strategy_name}"
 
     # 构建命令
     cmd = [
@@ -125,7 +140,7 @@ def run_single_experiment(
         "--mode", "full",
         "--skill_call_mode", FIXED_CONFIG["skill_call_mode"],
         "--skill_extraction_mode", FIXED_CONFIG["skill_extraction_mode"],
-        "--update_strategy", FIXED_CONFIG["update_strategy"],
+        "--update_strategy", update_strategy,
         "--output_dir", output_dir,
         "--exp_name", exp_name,  # 使用实验名称作为结果文件名
         "--skip_launch",
@@ -189,11 +204,12 @@ def run_single_experiment(
     experiment_result = {
         "experiment_id": exp_id,
         "exp_name": exp_name,
-        "fixed_config": FIXED_CONFIG,
+        "fixed_config": combo["fixed_config"],
         "data_size": data_size_name,
         "data_size_value": data_size,
         "ratio": ratio_name,
         "ratio_value": ratio,
+        "update_strategy": update_strategy_name,
         "cold_start_size": combo["cold_start_size"],
         "evolution_size": combo["evolution_size"],
         "success": success,
@@ -232,6 +248,7 @@ def run_single_experiment(
         "data_size_value": data_size,
         "ratio": ratio_name,
         "ratio_value": ratio,
+        "update_strategy": update_strategy_name,
         "cold_start_size": combo["cold_start_size"],
         "evolution_size": combo["evolution_size"],
         "success": success,
@@ -278,7 +295,7 @@ def main():
     parser.add_argument("--guard_port", type=int, default=8002)
     parser.add_argument("--target_port", type=int, default=8001)
     parser.add_argument("--resume_from", type=int, default=0)
-    parser.add_argument("--single", type=str, nargs=2, help="Run single experiment: data_size ratio")
+    parser.add_argument("--single", type=str, nargs=3, help="Run single experiment: data_size ratio update_strategy")
 
     args = parser.parse_args()
 
@@ -295,12 +312,12 @@ def main():
     print("=" * 60)
     print(f"固定配置:")
     print(f"  - Skills来源: DAN模板 (6个)")
-    print(f"  - 更新策略: {FIXED_CONFIG['update_strategy']}")
     print(f"  - 检索模式: {FIXED_CONFIG['skill_call_mode']}")
     print(f"  - Extraction: {FIXED_CONFIG['skill_extraction_mode']}")
     print(f"\n消融变量:")
     print(f"  - 数据量: {list(DATA_SIZES.keys())}")
     print(f"  - 配比: {list(CS_RATIOS.keys())}")
+    print(f"  - 更新策略: {list(UPDATE_STRATEGIES.keys())}")
     print(f"\n实验总数: {len(combinations)}")
     print("=" * 60)
 
@@ -317,20 +334,20 @@ def main():
 
     # 单实验模式
     if args.single:
-        data_size_name, ratio_name = args.single
+        data_size_name, ratio_name, strategy_name = args.single
 
         # 找到对应组合
         combo = None
         for c in combinations:
-            if c["data_size_name"] == data_size_name and c["ratio_name"] == ratio_name:
+            if c["data_size_name"] == data_size_name and c["ratio_name"] == ratio_name and c["update_strategy_name"] == strategy_name:
                 combo = c
                 break
 
         if combo is None:
-            print(f"错误: 未找到组合 {data_size_name} / {ratio_name}")
+            print(f"错误: 未找到组合 {data_size_name} / {ratio_name} / {strategy_name}")
             return
 
-        print(f"\n运行单个实验: {data_size_name} / {ratio_name}")
+        print(f"\n运行单个实验: {data_size_name} / {ratio_name} / {strategy_name}")
         run_single_experiment(combo, base_args, str(output_dir))
         return
 
@@ -365,10 +382,12 @@ def main():
 
     avg_by_data_size = {}
     avg_by_ratio = {}
+    avg_by_update_strategy = {}
 
     for r in successful_results:
         ds = r.get("data_size", "unknown")
         ratio_name = r.get("ratio", "unknown")
+        strategy_name = r.get("update_strategy", "unknown")
         asr = r.get("asr", 0)
 
         if ds not in avg_by_data_size:
@@ -379,9 +398,14 @@ def main():
             avg_by_ratio[ratio_name] = []
         avg_by_ratio[ratio_name].append(asr)
 
+        if strategy_name not in avg_by_update_strategy:
+            avg_by_update_strategy[strategy_name] = []
+        avg_by_update_strategy[strategy_name].append(asr)
+
     # 计算平均值
     avg_by_data_size = {k: sum(v)/len(v) for k, v in avg_by_data_size.items()}
     avg_by_ratio = {k: sum(v)/len(v) for k, v in avg_by_ratio.items()}
+    avg_by_update_strategy = {k: sum(v)/len(v) for k, v in avg_by_update_strategy.items()}
 
     # 最佳配置
     best_result = max(successful_results, key=lambda x: x.get("asr", 0)) if successful_results else None
@@ -393,9 +417,11 @@ def main():
         "failed": len([r for r in results if not r.get("success", True)]),
         "avg_by_data_size": avg_by_data_size,
         "avg_by_ratio": avg_by_ratio,
+        "avg_by_update_strategy": avg_by_update_strategy,
         "best_config": {
             "data_size": best_result.get("data_size") if best_result else None,
             "ratio": best_result.get("ratio") if best_result else None,
+            "update_strategy": best_result.get("update_strategy") if best_result else None,
             "asr": best_result.get("asr") if best_result else None,
         } if best_result else None,
         "results": results,
@@ -403,6 +429,7 @@ def main():
             "fixed_config": FIXED_CONFIG,
             "data_sizes": DATA_SIZES,
             "cs_ratios": CS_RATIOS,
+            "update_strategies": UPDATE_STRATEGIES,
         },
     }
 
@@ -421,6 +448,7 @@ def main():
         print(f"\n最佳结果:")
         print(f"  数据量: {best_result.get('data_size')}")
         print(f"  配比: {best_result.get('ratio')}")
+        print(f"  更新策略: {best_result.get('update_strategy')}")
         print(f"  ASR: {best_result.get('asr', 0)*100:.1f}%")
 
     print("=" * 60)
