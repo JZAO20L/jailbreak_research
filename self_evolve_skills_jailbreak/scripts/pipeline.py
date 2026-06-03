@@ -522,7 +522,10 @@ def phase_evolution(
                 updater.update_stats(result.skill_used, result.is_success)
 
             # 根据 update_strategy 更新 skills（增、改）
-            if update_strategy != "statistical":
+            # pure: 不添加新 skill，只更新统计
+            # statistical: 不添加新 skill，但执行维护
+            # success_only/failure_only/both: 添加新 skill
+            if update_strategy not in ["statistical", "pure"]:
                 updated = updater.update_from_reflection(reflection, result.is_success)
                 if updated:
                     stats["skills_added"] += 1
@@ -552,14 +555,19 @@ def phase_evolution(
             print(f"  Skill count: {eval_result['skill_count']}")
 
     # 最终维护
-    print("\n[Maintenance] Running final skill cleanup...")
-    final_maintenance = skill_library.run_maintenance(
-        min_success_rate=config.MIN_SUCCESS_RATE,
-        min_usage=config.MIN_USAGE,
-    )
-    stats["skills_deleted"] += final_maintenance["pruned"]
-    stats["skills_merged"] += final_maintenance["merged"]
-    stats["final_skill_count"] = skill_library.count()
+    # pure 策略：不执行维护，保留所有 skills
+    if update_strategy == "pure":
+        print("\n[Maintenance] Skipped (pure mode - skills preserved)")
+        stats["final_skill_count"] = skill_library.count()
+    else:
+        print("\n[Maintenance] Running final skill cleanup...")
+        final_maintenance = skill_library.run_maintenance(
+            min_success_rate=config.MIN_SUCCESS_RATE,
+            min_usage=config.MIN_USAGE,
+        )
+        stats["skills_deleted"] += final_maintenance["pruned"]
+        stats["skills_merged"] += final_maintenance["merged"]
+        stats["final_skill_count"] = skill_library.count()
 
     print(f"\nEvolution Results:")
     print(f"  Total attempts: {stats['total_attempts']}")
@@ -956,7 +964,7 @@ def main():
                         choices=["final_prompt", "trajectory"],
                         help="消融点 B: 冷启动 skill 总结粒度")
     parser.add_argument("--update_strategy", type=str, default="both",
-                        choices=["success_only", "failure_only", "both", "statistical"],
+                        choices=["success_only", "failure_only", "both", "statistical", "pure"],
                         help="消融点 C: 进化阶段更新策略")
 
     # 训练参数
