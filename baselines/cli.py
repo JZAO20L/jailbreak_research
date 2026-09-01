@@ -22,72 +22,116 @@ import argparse
 import json
 import os
 import sys
+import threading
 from typing import List, Dict, Any
 from tqdm import tqdm
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-# Add parent directory to path
+# Add parent directory to path for imports
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, BASE_DIR)
 
+# Also add RL4jailbreak directory for VLLMClient
+RL4_DIR = os.path.join(BASE_DIR, "RL4jailbreak")
+if os.path.exists(RL4_DIR):
+    sys.path.insert(0, RL4_DIR)
+
 from baselines import get_attacker, list_strategies, STRATEGIES
-from src.vllm_client import VLLMClient
-from src.config import (
-    TARGET_MODEL_PATH,
-    GUARD_MODEL_PATH,
-    DEFAULT_GPU_IDS,
-    DEFAULT_GPU_MEM_UTIL,
-    DEFAULT_MAX_MODEL_LEN,
-)
+
+# Try to import VLLMClient from different locations
+try:
+    from src.vllm_client import VLLMClient
+except ImportError:
+    from RL4jailbreak.src.vllm_client import VLLMClient
+
+try:
+    from src.config import (
+        TARGET_MODEL_PATH,
+        GUARD_MODEL_PATH,
+        DEFAULT_GPU_IDS,
+        DEFAULT_GPU_MEM_UTIL,
+        DEFAULT_MAX_MODEL_LEN,
+    )
+except ImportError:
+    from RL4jailbreak.src.config import (
+        TARGET_MODEL_PATH,
+        GUARD_MODEL_PATH,
+        DEFAULT_GPU_IDS,
+        DEFAULT_GPU_MEM_UTIL,
+        DEFAULT_MAX_MODEL_LEN,
+    )
 
 
 def setup_clients(args):
-    """Setup target and guard clients."""
+    """Setup target and guard clients.
+
+    连接已运行的服务（由 run_transfer.sh 启动），不指定 model_name，
+    让 VLLMClient 自动从服务获取正确的模型名称。
+    """
     clients = {}
 
-    # Target client
+    # Target client - 连接已运行的服务，自动获取 model_name
     if args.target_model:
         clients["target"] = VLLMClient(
-            model_name="target",
-            model_path=args.target_model,
+            model_name=None,  # 自动从服务获取
+            model_path=None,  # 连接模式不需要路径
             port=args.target_port,
-            gpu_id=args.gpu_id,
-            tensor_parallel_size=args.tp_size,
-            gpu_memory_utilization=args.gpu_mem,
+            launch_server=False,  # 连接已运行的服务
             max_model_len=args.max_len,
             timeout=args.timeout,
-            log_file=os.path.join(args.output, "logs", "target.log") if args.output else None,
         )
 
-    # Guard client
+    # Guard client - 连接已运行的服务，自动获取 model_name
     if args.guard_model:
         clients["guard"] = VLLMClient(
-            model_name="guard",
-            model_path=args.guard_model,
+            model_name=None,  # 自动从服务获取
+            model_path=None,  # 连接模式不需要路径
             port=args.guard_port,
-            gpu_id=args.gpu_id,
-            tensor_parallel_size=1,
-            gpu_memory_utilization=0.4,
+            launch_server=False,  # 连接已运行的服务
             max_model_len=args.max_len,
             timeout=args.timeout,
-            log_file=os.path.join(args.output, "logs", "guard.log") if args.output else None,
         )
 
     return clients
 
 
 def load_prompts(input_path: str) -> List[Dict[str, Any]]:
-    """Load prompts from JSONL file."""
+    """Load prompts from JSONL or JSON array file.
+
+    Supports two formats:
+    1. JSONL: each line is a JSON object {"prompt": "...", ...}
+    2. JSON array: ["prompt1", "prompt2", ...] or [{"prompt": "..."}, ...]
+    """
     prompts = []
     with open(input_path, "r", encoding="utf-8") as f:
-        for line in f:
-            if not line.strip():
-                continue
-            try:
-                obj = json.loads(line)
-                prompts.append(obj)
-            except json.JSONDecodeError:
-                continue
+        content = f.read().strip()
+
+    # Try parsing as JSON array first
+    try:
+        data = json.loads(content)
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, str):
+                    # Direct string format: ["prompt1", "prompt2", ...]
+                    prompts.append({"prompt": item})
+                elif isinstance(item, dict):
+                    # Object format: [{"prompt": "..."}, ...]
+                    prompts.append(item)
+            return prompts
+    except json.JSONDecodeError:
+        pass
+
+    # Fall back to JSONL format (line by line)
+    for line in content.split("\n"):
+        if not line.strip():
+            continue
+        try:
+            obj = json.loads(line)
+            prompts.append(obj)
+        except json.JSONDecodeError:
+            continue
+
     return prompts
 
 
@@ -131,6 +175,15 @@ def cmd_attack(args):
     elif args.strategy == "multilingual":
         attacker_kwargs["languages"] = args.languages.split(",") if args.languages else None
         attacker_kwargs["random_language"] = args.random_lang
+    elif args.strategy == "crescendo" and args.max_turns:
+        attacker_kwargs["max_turns"] = args.max_turns
+    elif args.strategy == "tap":
+        if args.max_turns:
+            attacker_kwargs["max_depth"] = args.max_turns
+        if args.branching_factor:
+            attacker_kwargs["branching_factor"] = args.branching_factor
+        if args.prune_top_k:
+            attacker_kwargs["prune_top_k"] = args.prune_top_k
 
     attacker = get_attacker(args.strategy, **attacker_kwargs)
 
@@ -164,12 +217,13 @@ def cmd_attack(args):
 
 
 def cmd_batch(args):
-    """Batch attack from file."""
+    """Batch attack from file with trajectory-level parallelism."""
     print(f"\n{'='*60}")
     print(f"Batch Attack")
     print(f"  Input: {args.input}")
     print(f"  Strategy: {args.strategy}")
     print(f"  Output: {args.output}")
+    print(f"  Max Workers: {args.max_workers}")
     print(f"{'='*60}\n")
 
     # Load prompts
@@ -198,24 +252,53 @@ def cmd_batch(args):
         attacker_kwargs["template"] = args.template
     elif args.strategy == "multilingual":
         attacker_kwargs["languages"] = args.languages.split(",") if args.languages else None
+    elif args.strategy == "crescendo" and args.max_turns:
+        attacker_kwargs["max_turns"] = args.max_turns
+    elif args.strategy == "tap":
+        if args.max_turns:
+            attacker_kwargs["max_depth"] = args.max_turns
+        if args.branching_factor:
+            attacker_kwargs["branching_factor"] = args.branching_factor
+        if args.prune_top_k:
+            attacker_kwargs["prune_top_k"] = args.prune_top_k
 
     attacker = get_attacker(args.strategy, **attacker_kwargs)
 
-    # Run batch attack
+    # Run batch attack with parallelism
     results = []
     successes = 0
+    results_lock = threading.Lock()
 
-    for item in tqdm(prompts, desc=f"[{args.strategy}]"):
+    def run_single_attack(item: Dict) -> Dict:
+        """Run single attack and return result dict."""
         prompt = item.get("prompt", "")
         if not prompt:
-            continue
+            return None
 
         result = attacker.attack(prompt, evaluate=args.evaluate)
         result.metadata["id"] = item.get("id")
-        results.append(result.to_dict())
+        return result.to_dict()
 
-        if result.is_success:
-            successes += 1
+    print(f"\nRunning with {args.max_workers} parallel workers...")
+
+    with ThreadPoolExecutor(max_workers=args.max_workers) as executor:
+        # Submit all tasks
+        futures = {executor.submit(run_single_attack, item): item for item in prompts}
+
+        # Collect results with progress bar
+        pbar = tqdm(total=len(prompts), desc=f"[{args.strategy}]", unit="prompt")
+        for future in as_completed(futures):
+            try:
+                result_dict = future.result()
+                if result_dict:
+                    with results_lock:
+                        results.append(result_dict)
+                        if result_dict.get("is_success"):
+                            successes += 1
+            except Exception as e:
+                print(f"Error: {e}")
+            pbar.update(1)
+        pbar.close()
 
     # Calculate statistics
     total = len(results)
@@ -240,6 +323,7 @@ def cmd_batch(args):
         "successes": successes,
         "asr": asr,
         "input": args.input,
+        "max_workers": args.max_workers,
     }
 
     summary_path = os.path.join(args.output, "summary.json")
@@ -375,6 +459,13 @@ def main():
     parser_attack.add_argument("--languages", help="Comma-separated language codes")
     parser_attack.add_argument("--random-lang", action="store_true", default=True, help="Random language")
 
+    # Crescendo-specific
+    parser_attack.add_argument("--max-turns", type=int, default=None, help="Crescendo: max conversation turns; TAP: max tree depth")
+
+    # TAP-specific
+    parser_attack.add_argument("--branching-factor", type=int, default=None, help="TAP: branches per seed per depth")
+    parser_attack.add_argument("--prune-top-k", type=int, default=None, help="TAP: keep top-k branches as next seeds")
+
     # Batch command
     parser_batch = subparsers.add_parser("batch", help="Batch attack from file")
     parser_batch.add_argument("--input", "-i", required=True, help="Input JSONL file")
@@ -382,12 +473,20 @@ def main():
     parser_batch.add_argument("--output", "-o", required=True, help="Output directory")
     parser_batch.add_argument("--limit", type=int, help="Limit number of prompts")
     parser_batch.add_argument("--evaluate", "-e", action="store_true", help="Evaluate attacks")
+    parser_batch.add_argument("--max_workers", type=int, default=16, help="Parallel workers (default: 16)")
 
     # Template-specific
     parser_batch.add_argument("--template", default="urgent_situation", help="Template name")
 
     # Multilingual-specific
     parser_batch.add_argument("--languages", help="Comma-separated language codes")
+
+    # Crescendo-specific
+    parser_batch.add_argument("--max-turns", type=int, default=None, help="Crescendo: max conversation turns; TAP: max tree depth")
+
+    # TAP-specific
+    parser_batch.add_argument("--branching-factor", type=int, default=None, help="TAP: branches per seed per depth")
+    parser_batch.add_argument("--prune-top-k", type=int, default=None, help="TAP: keep top-k branches as next seeds")
 
     # Compare command
     parser_compare = subparsers.add_parser("compare", help="Compare multiple strategies")

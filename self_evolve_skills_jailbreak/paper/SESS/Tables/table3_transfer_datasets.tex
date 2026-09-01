@@ -1,0 +1,30 @@
+% Table 3: Cross-dataset transfer (Qwen3-4B)
+\begin{table}[t]
+\centering
+\caption{Cross-dataset transfer on Qwen3-4B. Skills trained on WildTeaming generalize to all 5 benchmarks without re-training.}
+\label{tab:transfer_datasets}
+\resizebox{\columnwidth}{!}{%
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Dataset} & \textbf{default} & \textbf{advbench} & \textbf{hb\_ctx} & \textbf{hb\_std} & \textbf{jbBench} \\
+\midrule
+PAIR & 55.5 & 77.3 & 81.0 & 75.5 & 72.0 \\
+PAIR + SESS & \textbf{79.0} & \textbf{81.0} & \textbf{98.0} & \textbf{91.5} & \textbf{88.0} \\
+$\Delta$ & \textbf{+23.5} & +3.7 & \textbf{+17.0} & \textbf{+16.0} & \textbf{+16.0} \\
+\midrule
+AutoDAN & 86.8 & 75.4 & 87.0 & 75.5 & 80.0 \\
+DAN + SESS & \textbf{100.0} & \textbf{100.0} & \textbf{100.0} & \textbf{100.0} & \textbf{100.0} \\
+$\Delta$ & \textbf{+13.2} & \textbf{+24.6} & \textbf{+13.0} & \textbf{+24.5} & \textbf{+20.0} \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+% 数据来源：transfer/Qwen3-4B/ 下各数据集
+% default: WildJailbreak 测试集
+% advbench: AdvBench
+% hb_ctx: HarmBench Contextual
+% hb_std: HarmBench Standard
+% jbBench: JailbreakBench
+% 注意：DAN+SESS 使用固定 DAN 模板，而非 AutoDAN 的进化机制

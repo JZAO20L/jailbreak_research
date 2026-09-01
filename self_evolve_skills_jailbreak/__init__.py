@@ -16,10 +16,10 @@ Self-Evolving Skills Jailbreak
 - update_strategy: success_only | failure_only | both | statistical
 """
 
-from .core.skill import Skill, DEFAULT_SKILLS
-from .core.skill_library import SkillLibrary
-from .core.attacker import SkillGuidedAttacker, AttackResult
-from .core.reflector import SkillReflector, SkillUpdater, ReflectionResult
+from .src.skill import Skill, DEFAULT_SKILLS
+from .src.skill_library import SkillLibrary
+from .src.attacker import SkillGuidedAttacker, AttackResult
+from .src.reflector import SkillReflector, SkillUpdater, ReflectionResult
 
 __version__ = "0.1.0"
 __all__ = [

@@ -9,7 +9,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
 from typing import List
-from self_evolve_skills_jailbreak.core import Skill, SkillLibrary, SkillGuidedAttacker, SkillReflector, SkillUpdater
+from self_evolve_skills_jailbreak.src import Skill, SkillLibrary, SkillGuidedAttacker, SkillReflector, SkillUpdater
 
 
 # Mock LLM Client
@@ -180,7 +180,7 @@ def test_updater():
     )
 
     # 模拟反思结果
-    from self_evolve_skills_jailbreak.core.reflector import ReflectionResult
+    from self_evolve_skills_jailbreak.src.reflector import ReflectionResult
 
     skill = lib.list_skills()[0]
     reflection = ReflectionResult(

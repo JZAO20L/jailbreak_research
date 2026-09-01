@@ -1,0 +1,85 @@
+% Table A1: 完整跨模型×跨数据集实验结果（附录主表）
+\begin{table}[p]
+\centering
+\caption{完整跨模型×跨数据集实验结果。SESS skills 在 Qwen3-4B + WildJailbreak 上训练，直接迁移到 4 个目标模型和 5 个数据集。PAIR+SESS 使用纯自进化 skills（无结构先验），DAN+SESS 使用固定 DAN 模板作为结构先验。}
+\label{tab:full_results}
+\small
+\begin{tabular}{llcccccc}
+\toprule
+\textbf{Target Model} & \textbf{Method} & \textbf{default} & \textbf{advbench} & \textbf{hb\_ctx} & \textbf{hb\_std} & \textbf{jbBench} \\
+\midrule
+\multirow{7}{*}{\textbf{Qwen3-0.6B} (同族)}
+ & no\_rewrite & 42.6 & 46.0 & 86.0 & 63.5 & 52.0 \\
+ & PAIR & 77.3 & 88.1 & 86.0 & 90.5 & 90.0 \\
+ & AutoDAN & 88.0 & 92.1 & 95.0 & 91.0 & 85.0 \\
+ & DeepInception & 47.2 & 79.2 & 85.0 & 85.0 & 76.0 \\
+ & Persona & 46.5 & 81.4 & 85.0 & 88.0 & 75.0 \\
+ & PAIR + SESS & 85.5 & 98.5 & 95.0 & 98.5 & 98.0 \\
+ & DAN + SESS & \textbf{100.0} & \textbf{100.0} & \textbf{100.0} & \textbf{100.0} & \textbf{100.0} \\
+\midrule
+\multirow{7}{*}{\textbf{Qwen3-4B} (同族)}
+ & no\_rewrite & 30.3 & 3.3 & 79.0 & 21.5 & 7.0 \\
+ & PAIR & 55.5 & 77.3 & 81.0 & 75.5 & 72.0 \\
+ & AutoDAN & 86.8 & 75.4 & 87.0 & 75.5 & 80.0 \\
+ & DeepInception & 40.4 & 41.0 & 80.0 & 47.5 & 38.0 \\
+ & Persona & 32.3 & 16.7 & 67.0 & 36.0 & 20.0 \\
+ & PAIR + SESS & 79.0 & 81.0 & 98.0 & 91.5 & 88.0 \\
+ & DAN + SESS & \textbf{100.0} & \textbf{100.0} & \textbf{100.0} & \textbf{100.0} & \textbf{100.0} \\
+\midrule
+\multirow{7}{*}{\textbf{Qwen3-14B} (同族)}
+ & no\_rewrite & 22.6 & 2.3 & 66.0 & 23.5 & 7.0 \\
+ & PAIR & 58.5 & 77.9 & 76.0 & 71.5 & 72.0 \\
+ & AutoDAN & 80.9 & 90.8 & 83.0 & 84.0 & 89.0 \\
+ & DeepInception & 32.0 & 40.4 & 65.0 & 36.0 & 37.0 \\
+ & Persona & 26.2 & 14.2 & 60.0 & 21.5 & 17.0 \\
+ & PAIR + SESS & 77.0 & 84.6 & 90.0 & 91.0 & 87.0 \\
+ & DAN + SESS & \textbf{99.7} & \textbf{99.4} & \textbf{100.0} & \textbf{99.0} & \textbf{99.0} \\
+\midrule
+\multirow{7}{*}{\textbf{GPT-OSS-20B} (跨族)}
+ & no\_rewrite & 0.7 & 0.0 & 0.0 & 0.0 & 0.0 \\
+ & PAIR & 0.2 & 0.2 & 0.0 & 0.0 & 0.0 \\
+ & AutoDAN & 12.5 & 3.3 & 11.0 & 1.5 & 2.0 \\
+ & DeepInception & 0.4 & 0.0 & 1.0 & 0.0 & 0.0 \\
+ & Persona & 1.5 & 0.0 & 0.0 & 1.0 & 1.0 \\
+ & PAIR + SESS & 12.9 & 8.3 & 12.0 & 13.0 & 10.0 \\
+ & DAN + SESS & \textbf{30.0} & \textbf{28.1} & \textbf{29.0} & \textbf{36.5} & \textbf{39.0} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% 汇总统计
+\begin{table}[p]
+\centering
+\caption{跨模型迁移效果汇总（5 个数据集平均 ASR）。结构先验（DAN 模板）对跨族迁移至关重要。}
+\label{tab:transfer_summary}
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{0.6B} & \textbf{4B} & \textbf{14B} & \textbf{20B*} & \textbf{Avg} \\
+\midrule
+PAIR & 83.6 & 72.3 & 71.2 & 0.1 & 56.8 \\
+AutoDAN & 90.2 & 80.9 & 86.3 & 6.1 & 65.9 \\
+\midrule
+PAIR + SESS & 95.1 & 87.5 & 85.9 & 11.2 & 69.9 \\
+$\Delta$ vs PAIR & \textbf{+11.5} & \textbf{+15.2} & \textbf{+14.7} & +11.1 & --- \\
+\midrule
+DAN + SESS & \textbf{100.0} & \textbf{100.0} & \textbf{99.4} & \textbf{32.5} & --- \\
+$\Delta$ vs AutoDAN & +9.8 & +19.1 & +13.1 & \textbf{+26.4} & --- \\
+\bottomrule
+\multicolumn{6}{l}{\small *GPT-OSS-20B 为跨族模型（OpenAI 架构），其余为同族模型。} \\
+\multicolumn{6}{l}{\small 结构先验对跨族迁移至关重要：PAIR+SESS 仅 11.2\%，DAN+SESS 达 32.5\%。} \\
+\end{tabular}
+\end{table}
+
+% 数据来源：
+% Qwen3-0.6B: exp/transfer/results/Qwen3-0.6B/
+% Qwen3-4B: exp/transfer/results/Qwen3-4B/
+% Qwen3-14B-FP8: exp/transfer/results/Qwen3-14B-FP8/
+% gpt-oss-20b: exp/transfer/results/gpt-oss-20b/
+%
+% 方法说明：
+% - PAIR + SESS: pair_skills_28（28 个纯自进化 skills，无结构先验）
+% - DAN + SESS: autodan_skills_1/6（6 个固定 DAN 模板作为结构先验，而非 AutoDAN 进化）
+%   - 0.6B/4B: autodan_skills_1
+%   - 14B: autodan_skills_1
+%   - 20B: autodan_skills_54（54 个 skills，含 DAN 模板 + 进化产物）

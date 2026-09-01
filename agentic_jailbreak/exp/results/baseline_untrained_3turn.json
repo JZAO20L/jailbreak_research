@@ -1,0 +1,9 @@
+{
+  "total": 1000,
+  "success": 232,
+  "asr": 0.232,
+  "avg_turns": 2.741,
+  "max_turns": 3,
+  "variant": "no_skill",
+  "mode": "conversational"
+}

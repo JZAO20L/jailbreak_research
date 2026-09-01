@@ -2,22 +2,26 @@
 # =============================================================================
 # Experiment 3: Adaptive Hybrid Reward GRPO - Execution Script
 #
-# This script runs 6 experiments with different EMA beta values:
-#   EMA beta: 0, 0.67, 0.8, 0.9
-#   Window size: 1, 3, 5, 10
+# GPU Allocation (6-GPU setup):
+#   GPU0: Target Server (Qwen3-4B)
+#   GPU1: Guard Server (Qwen3Guard-Gen-4B)
+#   GPU2-5: 4-card concurrent training (accelerate)
+#
+# Experiments: 3 EMA betas × 3 combinations = 9 total
+#   EMA beta: 0, 0.8, 0.9 (window size: 1, 5, 10)
 #
 # Each experiment:
-#   1. Start Target + Guard services (GPU1)
-#   2. Train Policy with adaptive reward (GPU0)
-#   3. Evaluate trained Policy (start Policy with LoRA on GPU0)
+#   1. Start Target + Guard services (GPU0, GPU1)
+#   2. Train Policy with adaptive reward (GPU2-5, 125 steps)
+#   3. Evaluate trained Policy (start Policy with LoRA on GPU2)
 #   4. Clean up for next experiment
 #
 # Usage:
-#   bash exp.sh                     # Run all 4 experiments
-#   bash exp.sh --ema_beta 0.9      # Run single experiment
-#   bash exp.sh --attack_prompt hypothetical_scenario  # Use specific attack prompt
+#   bash exp.sh                     # Run all 9 experiments
+#   bash exp.sh --ema_beta 0.9      # Run single EMA beta
+#   bash exp.sh --combination hypothetical_scenario:idea_preservation
 #   bash exp.sh --reset             # Clear checkpoints and start fresh
-#   bash exp.sh --max_steps 500     # Override max steps
+#   bash exp.sh --max_steps 250     # Override max steps (default: 125)
 #
 # Reference: TODO.md (Experiment 3), NEW_IDEA.md
 # =============================================================================
@@ -38,9 +42,9 @@ EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/val.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
 
 # Model paths
-POLICY_MODEL="${POLICY_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B}"
+POLICY_MODEL="${POLICY_MODEL:-/home/tiger/models/Qwen/Qwen3-4B}"
+TARGET_MODEL="${TARGET_MODEL:-/home/tiger/models/Qwen/Qwen3-4B}"
+GUARD_MODEL="${GUARD_MODEL:-/home/tiger/models/Qwen/Qwen3Guard-Gen-4B}"
 
 # Ports
 TARGET_PORT=8001
@@ -48,18 +52,22 @@ GUARD_PORT=8002
 POLICY_PORT=8003
 
 # vLLM config (根据 TODO.md: policy 4k, target/guard 8k)
-VLLM_MAX_MODEL_LEN_POLICY=4096
-VLLM_MAX_MODEL_LEN_TARGET=8192
-VLLM_MAX_MODEL_LEN_GUARD=8192
-VLLM_GPU_UTIL_TARGET=0.4
-VLLM_GPU_UTIL_GUARD=0.4
+VLLM_MAX_MODEL_LEN_POLICY=2048
+VLLM_MAX_MODEL_LEN_TARGET=4096
+VLLM_MAX_MODEL_LEN_GUARD=4096
+VLLM_GPU_UTIL_TARGET=0.7
+VLLM_GPU_UTIL_GUARD=0.7
 VLLM_GPU_UTIL_POLICY=0.9
+VLLM_GPU_MEMORY_UTIL_TRAIN=0.5  # Colocate mode, leave half for training batch
 
-# Training config (from TODO.md)
-MAX_STEPS="${MAX_STEPS:-500}"
+# Training config (6-GPU setup: 4-card training)
+# 125 steps × (4×2×4=32 batch) = 4000 samples ≈ single-card 500 steps × 8
+MAX_STEPS="${MAX_STEPS:-125}"
 LEARNING_RATE="${LEARNING_RATE:-1e-5}"
 NUM_GENERATIONS="${NUM_GENERATIONS:-8}"
 BETA="${BETA:-0.05}"
+PER_DEVICE_BATCH_SIZE="${PER_DEVICE_BATCH_SIZE:-2}"
+GRADIENT_ACCUMULATION="${GRADIENT_ACCUMULATION:-4}"
 
 # Adaptive reward config (fixed for all experiments except ema_beta)
 ALPHA=2.0
@@ -118,7 +126,7 @@ while [[ $# -gt 0 ]]; do
             echo "                           Values: hypothetical_scenario:idea_preservation,"
             echo "                           hypothetical_scenario:naturalness,"
             echo "                           role_playing:idea_preservation"
-            echo "  --max_steps N           Training steps (default: 500)"
+            echo "  --max_steps N           Training steps (default: 125)"
             echo "  --reset                 Clear checkpoints and start fresh"
             echo "  --help                  Show this help"
             exit 0
@@ -183,16 +191,17 @@ wait_for_port() {
 # Service Management
 # =========================
 start_target_service() {
-    log "Starting Target service (port: $TARGET_PORT)..."
+    log "Starting Target service (port: $TARGET_PORT, GPU0)..."
     if check_port_active "$TARGET_PORT"; then
         log "Target already running"
         return 0
     fi
 
-    CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
+    CUDA_VISIBLE_DEVICES=0 VLLM_USE_MODELSCOPE=true FLASHINFER_DISABLE_VERSION_CHECK=1 nohup vllm serve "$TARGET_MODEL" \
         --host 127.0.0.1 --port $TARGET_PORT \
         --max-model-len $VLLM_MAX_MODEL_LEN_TARGET \
         --gpu-memory-utilization $VLLM_GPU_UTIL_TARGET \
+        --tensor-parallel-size 1 \
         --served-model-name target \
         > "$OUTPUT_DIR/target_vllm.log" 2>&1 &
 
@@ -200,16 +209,17 @@ start_target_service() {
 }
 
 start_guard_service() {
-    log "Starting Guard service (port: $GUARD_PORT)..."
+    log "Starting Guard service (port: $GUARD_PORT, GPU1)..."
     if check_port_active "$GUARD_PORT"; then
         log "Guard already running"
         return 0
     fi
 
-    CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$GUARD_MODEL" \
+    CUDA_VISIBLE_DEVICES=1 VLLM_USE_MODELSCOPE=true FLASHINFER_DISABLE_VERSION_CHECK=1 nohup vllm serve "$GUARD_MODEL" \
         --host 127.0.0.1 --port $GUARD_PORT \
         --max-model-len $VLLM_MAX_MODEL_LEN_GUARD \
         --gpu-memory-utilization $VLLM_GPU_UTIL_GUARD \
+        --tensor-parallel-size 1 \
         --served-model-name guard \
         > "$OUTPUT_DIR/guard_vllm.log" 2>&1 &
 
@@ -220,6 +230,25 @@ stop_policy_service() {
     log "Stopping Policy service..."
     pkill -f "vllm.*$POLICY_PORT" 2>/dev/null || true
     sleep 3
+}
+
+start_policy_service() {
+    log "Starting Policy service (port: $POLICY_PORT, GPU2)..."
+    if check_port_active "$POLICY_PORT"; then
+        log "Policy already running"
+        return 0
+    fi
+
+    CUDA_VISIBLE_DEVICES=2 VLLM_USE_MODELSCOPE=true FLASHINFER_DISABLE_VERSION_CHECK=1 \
+    nohup vllm serve "$POLICY_MODEL" \
+        --host 127.0.0.1 --port $POLICY_PORT \
+        --max-model-len $VLLM_MAX_MODEL_LEN_POLICY \
+        --gpu-memory-utilization $VLLM_GPU_UTIL_POLICY \
+        --tensor-parallel-size 1 \
+        --served-model-name policy \
+        > "$OUTPUT_DIR/policy_vllm.log" 2>&1 &
+
+    wait_for_port "$POLICY_PORT"
 }
 
 stop_all_services() {
@@ -292,9 +321,15 @@ run_training() {
         window_size=$(python3 -c "print(int(round(1/(1-$ema_beta))))")
     fi
     log "Window size: ~$window_size"
-    
-    # Run training
-    CUDA_VISIBLE_DEVICES=0 python "$SCRIPT_DIR/adaptive_hybrid_reward_grpo.py" \
+
+    # Run training - GPU2-5 concurrent training with accelerate
+    # Use dynamic port to avoid conflicts between experiments
+    ACCELERATE_PORT=$((29500 + EXP_IDX))
+    CUDA_VISIBLE_DEVICES=2,3,4,5 FLASHINFER_DISABLE_VERSION_CHECK=1 \
+    PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python WANDB_DISABLED=true \
+    accelerate launch --num-processes 4 --num-machines 1 --main-process-port $ACCELERATE_PORT \
+        --mixed_precision bf16 --dynamo_backend no \
+        "$SCRIPT_DIR/adaptive_hybrid_reward_grpo.py" \
         --ema_beta "$ema_beta" \
         --alpha "$ALPHA" \
         --delta "$DELTA" \
@@ -307,11 +342,14 @@ run_training() {
         --learning_rate "$LEARNING_RATE" \
         --num_generations "$NUM_GENERATIONS" \
         --beta "$BETA" \
+        --per_device_train_batch_size "$PER_DEVICE_BATCH_SIZE" \
+        --gradient_accumulation_steps "$GRADIENT_ACCUMULATION" \
+        --vllm_gpu_memory_utilization "$VLLM_GPU_MEMORY_UTIL_TRAIN" \
         --output_dir "$exp_output" \
         --target_port "$TARGET_PORT" \
         --guard_port "$GUARD_PORT" \
         --run_name "exp3_${exp_key}"
-    
+
     log "Training complete: $exp_key"
 }
 
@@ -381,12 +419,14 @@ run_evaluation() {
     # Stop any existing Policy service
     stop_policy_service
     
-    # Start Policy with LoRA
-    log "Starting Policy service with LoRA..."
-    CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
+    # Start Policy with LoRA (GPU2, evaluation uses single GPU)
+    log "Starting Policy service with LoRA on GPU2..."
+    CUDA_VISIBLE_DEVICES=2 VLLM_USE_MODELSCOPE=true FLASHINFER_DISABLE_VERSION_CHECK=1 \
+    nohup vllm serve "$POLICY_MODEL" \
         --host 127.0.0.1 --port $POLICY_PORT \
         --max-model-len $VLLM_MAX_MODEL_LEN_POLICY \
         --gpu-memory-utilization $VLLM_GPU_UTIL_POLICY \
+        --tensor-parallel-size 1 \
         --served-model-name policy \
         --enable-lora \
         --lora-modules policy_lora="$lora_path" \
@@ -452,6 +492,12 @@ log "Max steps per experiment: $MAX_STEPS"
 log "============================================================"
 
 mkdir -p "$OUTPUT_DIR"
+
+# Clean up any leftover accelerate/torch processes from previous runs
+log "Cleaning up leftover processes..."
+pkill -f "accelerate launch" 2>/dev/null || true
+pkill -f "torch.distributed" 2>/dev/null || true
+sleep 2
 
 # Ensure Target + Guard running (shared across experiments)
 ensure_target_guard_running

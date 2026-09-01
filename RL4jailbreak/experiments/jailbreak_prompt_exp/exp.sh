@@ -2,8 +2,8 @@
 # Jailbreak Prompt 实验脚本 - 实验1 (重做版本)
 #
 # 根据 TODO.md "实验重做" 部分：
+# GPU配置: policy&target共用GPU0&1(Qwen3-4B tensor parallel), guard用GPU2&3(tensor parallel)
 # - 模型路径: models
-# - GPU配置: eval时4卡 (0:policy, 1:target, 2&3:guard双实例并发)
 # - 上下文长度: policy 4k, target&guard 8k
 # - 新增: qwen3-max对比实验
 #
@@ -26,25 +26,23 @@ BASE_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 TEST_SET="${TEST_SET:-$BASE_DIR/../data/dataset/processed/10k/test.jsonl}"
 OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
 
-# 模型路径 (根据TODO.md "实验重做")
-POLICY_MODEL="${POLICY_MODEL:-/home/tiger/models/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/home/tiger/models/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/home/tiger/models/Qwen3Guard-Gen-4B}"
+# 模型路径 (根据TODO.md "实验重做") - policy和target共用Qwen3-4B
+POLICY_MODEL="${POLICY_MODEL:-/home/tiger/models/Qwen/Qwen3-4B}"
+TARGET_MODEL="${TARGET_MODEL:-/home/tiger/models/Qwen/Qwen3-4B}"
+GUARD_MODEL="${GUARD_MODEL:-/home/tiger/models/Qwen/Qwen3Guard-Gen-4B}"
 
-# 端口配置 (双guard)
+# 端口配置 - policy和target共用GPU0&1上的同一个Qwen3-4B服务
 POLICY_PORT=8003
-TARGET_PORT=8001
-GUARD_PORT_1=8002  # GPU2上的guard
-GUARD_PORT_2=8004  # GPU3上的guard
+TARGET_PORT=8003  # 与policy共用同一个服务
+GUARD_PORT=8002   # GPU2&3上的guard
 
-# 上下文长度 (根据TODO.md)
-POLICY_MAX_MODEL_LEN=4096
+# 上下文长度 (根据TODO.md - policy和target共用，统一使用8k)
+POLICY_MAX_MODEL_LEN=8192
 TARGET_MAX_MODEL_LEN=8192
 GUARD_MAX_MODEL_LEN=8192
 
 # GPU显存利用率
 POLICY_GPU_UTIL=0.9
-TARGET_GPU_UTIL=0.9
 GUARD_GPU_UTIL=0.9
 
 # qwen3-max API配置 (根据TODO.md)
@@ -202,84 +200,40 @@ with open('$CKPT_FILE', 'w') as f:
 # =========================
 start_all_services() {
     log "============================================================"
-    log "启动模型服务 (并发启动 Policy+Target)"
+    log "启动模型服务"
     log "============================================================"
-    log "GPU0: Policy ($POLICY_MAX_MODEL_LEN context)"
-    log "GPU1: Target ($TARGET_MAX_MODEL_LEN context)"
-    log "GPU2: Guard ($GUARD_MAX_MODEL_LEN context)"
+    log "GPU0&1: Qwen3-4B (tensor parallel, policy&target共用, $POLICY_MAX_MODEL_LEN/$TARGET_MAX_MODEL_LEN context)"
+    log "GPU2&3: Guard (tensor parallel, $GUARD_MAX_MODEL_LEN context)"
     log "============================================================"
 
     # 设置环境变量
-    export VLLM_USE_MODELSCOPE=false
+    export VLLM_USE_MODELSCOPE=true
+    export FLASHINFER_DISABLE_VERSION_CHECK=1
 
-    # 并发启动 Policy(GPU0) 和 Target(GPU1) - 都是Qwen3-4B
-    log "并发启动 Policy (GPU0) 和 Target (GPU1)..."
-
-    # Policy (GPU0)
+    # Qwen3-4B (GPU0&1, tensor parallel) - policy和target共用
+    log "启动 Qwen3-4B (GPU0&1, tensor parallel, 端口 $POLICY_PORT)..."
     if ! check_port_active $POLICY_PORT; then
-        CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
+        CUDA_VISIBLE_DEVICES=0,1 nohup vllm serve "$POLICY_MODEL" \
             --host 127.0.0.1 --port $POLICY_PORT \
-            --max-model-len $POLICY_MAX_MODEL_LEN \
+            --tensor-parallel-size 2 \
+            --max-model-len $TARGET_MAX_MODEL_LEN \
             --gpu-memory-utilization $POLICY_GPU_UTIL \
             --served-model-name policy \
-            > "$OUTPUT_DIR/policy_vllm.log" 2>&1 &
-        log "  Policy 进程已启动 (等待就绪)"
+            > "$OUTPUT_DIR/qwen3_vllm.log" 2>&1 &
+        log "  Qwen3-4B 进程已启动 (等待就绪)"
     else
-        log "  Policy 已在运行"
+        log "  Qwen3-4B 已在运行"
     fi
 
-    # Target (GPU1) - 同时启动
-    if ! check_port_active $TARGET_PORT; then
-        CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
-            --host 127.0.0.1 --port $TARGET_PORT \
-            --max-model-len $TARGET_MAX_MODEL_LEN \
-            --gpu-memory-utilization $TARGET_GPU_UTIL \
-            --served-model-name target \
-            > "$OUTPUT_DIR/target_vllm.log" 2>&1 &
-        log "  Target 进程已启动 (等待就绪)"
-    else
-        log "  Target 已在运行"
-    fi
+    # 等待 Qwen3-4B 就绪
+    wait_for_port $POLICY_PORT "Qwen3-4B"
 
-    # 等待 Policy 和 Target 就绪 (并发等待)
-    log "等待 Policy 和 Target 服务就绪..."
-    local policy_ready=false
-    local target_ready=false
-    local timeout=180
-    local elapsed=0
-
-    while [ $elapsed -lt $timeout ]; do
-        if ! $policy_ready && check_port_active $POLICY_PORT; then
-            log "  Policy 服务就绪! (端口 $POLICY_PORT)"
-            policy_ready=true
-        fi
-        if ! $target_ready && check_port_active $TARGET_PORT; then
-            log "  Target 服务就绪! (端口 $TARGET_PORT)"
-            target_ready=true
-        fi
-
-        if $policy_ready && $target_ready; then
-            break
-        fi
-
-        sleep 2
-        elapsed=$((elapsed + 2))
-    done
-
-    if ! $policy_ready; then
-        log "ERROR: Policy 服务启动超时!"
-        return 1
-    fi
-    if ! $target_ready; then
-        log "ERROR: Target 服务启动超时!"
-        return 1
-    fi
-
-    # Guard (GPU2)
-    log "启动 Guard (GPU2, 端口 $GUARD_PORT)..."
+    # Guard (GPU2&3, tensor parallel)
+    log "启动 Guard (GPU2&3, tensor parallel, 端口 $GUARD_PORT)..."
     if ! check_port_active $GUARD_PORT; then
-        CUDA_VISIBLE_DEVICES=2 nohup vllm serve "$GUARD_MODEL" \
+        CUDA_VISIBLE_DEVICES=2,3 nohup vllm serve "$GUARD_MODEL" \
             --host 127.0.0.1 --port $GUARD_PORT \
+            --tensor-parallel-size 2 \
             --max-model-len $GUARD_MAX_MODEL_LEN \
             --gpu-memory-utilization $GUARD_GPU_UTIL \
             --served-model-name guard \
@@ -296,11 +250,10 @@ stop_all_services() {
     log "============================================================"
     log "关闭所有模型服务"
     log "============================================================"
-    
-    stop_service $POLICY_PORT "Policy"
-    stop_service $TARGET_PORT "Target"
+
+    stop_service $POLICY_PORT "Qwen3-4B"
     stop_service $GUARD_PORT "Guard"
-    
+
     log "所有服务已关闭"
 }
 

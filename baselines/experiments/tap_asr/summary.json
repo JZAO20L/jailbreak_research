@@ -1,0 +1,8 @@
+{
+  "strategy": "tap",
+  "total": 1000,
+  "successes": 72,
+  "asr": 0.072,
+  "input": "self_evolve_skills_jailbreak/data/test_prompts.json",
+  "max_workers": 8
+}

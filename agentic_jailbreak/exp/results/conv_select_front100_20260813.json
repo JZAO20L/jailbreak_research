@@ -1,0 +1,9 @@
+{
+  "total": 100,
+  "success": 5,
+  "asr": 0.05,
+  "avg_turns": 2.92,
+  "max_turns": 3,
+  "variant": "conv_select_adapt",
+  "mode": "conversational"
+}

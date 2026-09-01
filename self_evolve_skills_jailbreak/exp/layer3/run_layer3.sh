@@ -1,21 +1,23 @@
 #!/bin/bash
 # =============================================================================
-# Layer 3: AutoDAN起点Skills实验
+# Layer 3.1: AutoDAN Skills 核心机制 Grid 实验
 # =============================================================================
 #
-# Layer 3: DAN模板作为初始Skills，探索数据策略对Skills进化的影响
-# - Skills来源: DAN模板 (6个)
-# - 更新策略: statistical (固定)
-# - 检索模式: single_call (固定)
-# - 数据量: small/medium/large (300/500/1000)
-# - 配比: full_evolve/early/balanced/evo (0%/30%/20%/10%)
+# 实验设计：Grid 2 × 4 × 2 = 16 组
+# - skill_call_mode: single_call / every_iteration (2)
+# - update_strategy: success_only / failure_only / both / statistical (4)
+# - cs_ratio: full_evolve(0%) / early(30%) (2)
 #
-# 实验总数: 3 × 4 = 12组
+# 固定配置：
+# - data_size: large (1000)
+# - skill_source: DAN模板 (6个)
+# - skill_extraction_mode: trajectory
 #
 # Usage:
-#   bash run_layer3.sh --skip_launch --max_workers 64
-#   bash run_layer3.sh --skip_launch --single medium full_evolve
-#   bash run_layer3.sh --skip_launch --resume_from 5
+#   bash run_layer3.sh                              # 启动服务 + 运行全部 16 组
+#   bash run_layer3.sh --skip_launch --max_workers 64  # 跳过启动，使用已有服务
+#   bash run_layer3.sh --skip_launch --single single_call statistical full_evolve  # 单实验
+#   bash run_layer3.sh --skip_launch --resume_from 9  # 断点续跑
 # =============================================================================
 
 set -e
@@ -53,8 +55,8 @@ MAINTENANCE_INTERVAL=100
 
 # 日志目录
 LOG_DIR="$SCRIPT_DIR/logs"
-RESULT_DIR="$SCRIPT_DIR/results"
-PROCESS_LOG="$SCRIPT_DIR/process.log"
+RESULT_DIR="$SCRIPT_DIR/results_core"
+PROCESS_LOG="$SCRIPT_DIR/process_core.log"
 mkdir -p "$LOG_DIR" "$RESULT_DIR" "$RESULT_DIR/skills"
 
 # PID 记录
@@ -87,8 +89,8 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         --single)
-            SINGLE_MODE="$2 $3"
-            shift 3
+            SINGLE_MODE="$2 $3 $4"
+            shift 4
             ;;
         --guard_gpu)
             GUARD_GPU="$2"
@@ -100,7 +102,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: bash run_layer3.sh [--skip_launch] [--max_workers N] [--single data_size ratio] [--resume_from N]"
+            echo "Usage: bash run_layer3.sh [--skip_launch] [--max_workers N] [--single call_mode strategy ratio] [--resume_from N]"
             exit 1
             ;;
     esac
@@ -158,10 +160,11 @@ check_server_running() {
 
 echo ""
 echo "============================================================================"
-echo "Layer 3: AutoDAN起点Skills实验"
+echo "Layer 3.1: AutoDAN Skills 核心机制 Grid 实验"
 echo "============================================================================"
 echo ""
 echo "Step 1: 启动 vLLM Servers"
+echo "============================================================================"
 echo "Guard:  GPU $GUARD_GPU, Port $GUARD_PORT, $GUARD_MODEL_PATH (TP=$GUARD_TP)"
 echo "Target: GPU $TARGET_GPU, Port $TARGET_PORT, $TARGET_MODEL_PATH (TP=$TARGET_TP)"
 echo "============================================================================"
@@ -228,23 +231,23 @@ echo "所有服务已就绪!"
 echo ""
 
 # =============================================================================
-# Step 2: Run Layer 3 Grid Search
+# Step 2: Run Layer 3.1 Grid Search
 # =============================================================================
 
 echo ""
 echo "============================================================================"
-echo "Step 2: 运行 Layer 3 Grid Search (12 组)"
+echo "Step 2: 运行 Layer 3.1 Grid Search (16 组)"
 echo "============================================================================"
 echo ""
-echo "固定配置 (来自 Layer 1/2 验证):"
-echo "  - Skills来源: DAN模板 (6个)"
-echo "  - 更新策略: statistical"
-echo "  - 检索模式: single_call"
-echo "  - Extraction: trajectory"
+echo "Grid 变量:"
+echo "  - skill_call_mode: single_call / every_iteration (2)"
+echo "  - update_strategy: success_only / failure_only / both / statistical (4)"
+echo "  - cs_ratio: full_evolve(0%) / early(30%) (2)"
 echo ""
-echo "消融变量:"
-echo "  - 数据量: small(300) / medium(500) / large(1000)"
-echo "  - 配比: full_evolve(0%) / early(30%) / balanced(20%) / evo(10%)"
+echo "固定配置:"
+echo "  - data_size: large (1000)"
+echo "  - skill_source: DAN模板 (6个)"
+echo "  - skill_extraction_mode: trajectory"
 echo ""
 echo "并发数: $MAX_WORKERS"
 echo "轮数: $NUM_EPOCHS"
@@ -278,25 +281,18 @@ echo "过程日志: $PROCESS_LOG"
 eval $GRID_SEARCH_CMD 2>&1 | tee "$PROCESS_LOG"
 
 # =============================================================================
-# Step 3: Summarize Results
+# Step 3: Summary (内置在 Python 脚本中)
 # =============================================================================
 
 echo ""
 echo "============================================================================"
-echo "Step 3: 统计结果"
+echo "Step 3: 结果汇总"
 echo "============================================================================"
 echo ""
-
-python "$SCRIPT_DIR/scripts/summarize_layer3.py" \
-    --input "$RESULT_DIR" \
-    --output "$RESULT_DIR/layer3_summary_${TIMESTAMP}.json"
-
-python "$SCRIPT_DIR/scripts/generate_report.py" \
-    --input "$RESULT_DIR/layer3_summary_${TIMESTAMP}.json" \
-    --output "$RESULT_DIR/layer3_report_${TIMESTAMP}.md"
-
+echo "结果已自动汇总到: $RESULT_DIR"
+echo "查看汇总文件: ls $RESULT_DIR/layer3_core_summary_*.json"
 echo ""
-echo "结果汇总完成"
+echo "============================================================================"
 
 # =============================================================================
 # Step 4: Stop Servers
@@ -335,8 +331,10 @@ echo "==========================================================================
 echo ""
 echo "结果目录: $RESULT_DIR"
 echo "Skills目录: $RESULT_DIR/skills"
-echo "汇总文件: $RESULT_DIR/layer3_summary_${TIMESTAMP}.json"
-echo "报告文件: $RESULT_DIR/layer3_report_${TIMESTAMP}.md"
 echo "过程日志: $PROCESS_LOG"
+echo ""
+echo "查看结果汇总:"
+echo "  cat $RESULT_DIR/RESULTS_SUMMARY.md"
+echo "  或打开 $RESULT_DIR/RESULTS_SUMMARY.html"
 echo ""
 echo "============================================================================"

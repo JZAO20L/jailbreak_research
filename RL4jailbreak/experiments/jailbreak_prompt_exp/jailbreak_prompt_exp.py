@@ -5,8 +5,8 @@ Jailbreak Prompt 实验脚本 - 实验1 (重做版本)
 
 根据 TODO.md "实验重做" 部分：
 - 模型路径: models
-- GPU配置: eval时3卡 (0:policy, 1:target, 2:guard)
-- 上下文长度: policy 4k, target&guard 8k
+- GPU配置: policy&target共用GPU0&1(Qwen3-4B tensor parallel), guard用GPU2&3(tensor parallel)
+- 上下文长度: Qwen3-4B统一使用target的8k配置, guard 8k
 
 特点:
 - 不启动/关闭模型，连接由sh脚本启动的已有服务
@@ -56,17 +56,18 @@ DEFAULT_CONFIG = {
     "output_root": os.path.join(BASE_DIR, "experiments/jailbreak_prompt_exp/output"),
 
     # 模型路径 (根据TODO.md)
-    "policy_model": "/home/tiger/models/Qwen3-4B",
-    "target_model": "/home/tiger/models/Qwen3-4B",
-    "guard_model": "/home/tiger/models/Qwen3Guard-Gen-4B",
+    "policy_model": "/home/tiger/models/Qwen/Qwen3-4B",
+    "target_model": "/home/tiger/models/Qwen/Qwen3-4B",
+    "guard_model": "/home/tiger/models/Qwen/Qwen3Guard-Gen-4B",
 
     # 端口 (连接已有服务，不启动新服务)
+    # policy和target共用GPU0&1上的同一个Qwen3-4B服务
     "policy_port": 8003,
-    "target_port": 8001,
-    "guard_port": 8002,
+    "target_port": 8003,  # 与policy共用同一个服务
+    "guard_port": 8002,   # GPU2&3上的guard
 
-    # 上下文长度 (根据TODO.md)
-    "policy_max_model_len": 4096,
+    # 上下文长度 (根据TODO.md - policy和target共用同一模型，统一使用target的8k)
+    "policy_max_model_len": 8192,  # 与target共用，统一使用8k
     "target_max_model_len": 8192,
     "guard_max_model_len": 8192,
 
@@ -266,23 +267,23 @@ def run_asr_test(
 
     try:
         target_cfg = {
-            "model_name": "target",
+            # "model_name": "target",
             "model_path": "",
             "host": "127.0.0.1",
             "port": target_client.port,
-            "gpu_id": "1",
+            # "gpu_id": "1",
             "timeout": 900,
-            "gpu_memory_utilization": 0.4,
+            # "gpu_memory_utilization": 0.4,
             "max_model_len": target_max_model_len,
         }
         guard_cfg = {
-            "model_name": "guard",
+            # "model_name": "guard",
             "model_path": "",
             "host": "127.0.0.1",
             "port": guard_client.port,
-            "gpu_id": "2",
+            # "gpu_id": "2",
             "timeout": 900,
-            "gpu_memory_utilization": 0.4,
+            # "gpu_memory_utilization": 0.4,
             "max_model_len": guard_max_model_len,
         }
 
@@ -440,8 +441,8 @@ def main():
     print(f"策略数量: {len(strategies)}")
     print(f"总评估次数: {len(strategies) + 1} (含原始基线)")
     print(f"输出目录: {config['output_root']}")
-    print(f"GPU配置: Policy(GPU0:{config['policy_port']}), Target(GPU1:{config['target_port']}), Guard(GPU2:{config['guard_port']})")
-    print(f"上下文长度: Policy={config['policy_max_model_len']}, Target={config['target_max_model_len']}, Guard={config['guard_max_model_len']}")
+    print(f"GPU配置: Qwen3-4B(GPU0&1:{config['policy_port']}, policy&target共用), Guard(GPU2&3:{config['guard_port']})")
+    print(f"上下文长度: Qwen3-4B={config['policy_max_model_len']}, Guard={config['guard_max_model_len']}")
     if args.topk:
         print(f"Top-K筛选: 只保留前 {args.topk} 个策略")
     if args.gap_threshold:
@@ -470,21 +471,20 @@ def main():
     print("Step 1/3: 连接模型服务 (由sh脚本已启动)")
     print("="*80)
 
-    print(f"  连接Policy (GPU0:{config['policy_port']})...")
+    print(f"  连接Qwen3-4B (GPU0&1:{config['policy_port']}, policy&target共用)...")
     policy_client = VLLMClient(
-        model_name="policy",
-        model_path=config["policy_model"],
+        # model_name自动从服务器获取
         host="127.0.0.1",
         port=config["policy_port"],
         launch_server=False,
         timeout=900,
     )
-    print("  Policy连接成功!")
+    print("  Qwen3-4B连接成功!")
 
-    print(f"  连接Target (GPU1:{config['target_port']})...")
+    # target使用同一个连接（同一个port，自动获取相同的model_name）
+    print(f"  Target共用Qwen3-4B服务...")
     target_client = VLLMClient(
-        model_name="target",
-        model_path=config["target_model"],
+        # model_name自动从服务器获取
         host="127.0.0.1",
         port=config["target_port"],
         launch_server=False,
@@ -492,10 +492,9 @@ def main():
     )
     print("  Target连接成功!")
 
-    print(f"  连接Guard (GPU2:{config['guard_port']})...")
+    print(f"  连接Guard (GPU2&3:{config['guard_port']})...")
     guard_client = VLLMClient(
-        model_name="guard",
-        model_path=config["guard_model"],
+        # model_name自动从服务器获取
         host="127.0.0.1",
         port=config["guard_port"],
         launch_server=False,

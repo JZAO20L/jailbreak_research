@@ -57,9 +57,9 @@ DEFAULT_CONFIG = {
     "prompts": [REWRITE_PROMPT],
 
     # 模型路径
-    "base_model_path": "/home/tiger/models/Qwen3-4B",
-    "target_model_path": "/home/tiger/models/Qwen3-4B",
-    "guard_model_path": "/home/tiger/models/Qwen3Guard-Gen-4B",
+    "base_model_path": "/home/tiger/models/Qwen/Qwen3-4B",
+    "target_model_path": "/home/tiger/models/Qwen/Qwen3-4B",
+    "guard_model_path": "/home/tiger/models/Qwen/Qwen3Guard-Gen-4B",
 
     # 端口
     "policy_port": 8003,
@@ -177,8 +177,6 @@ def run_single_eval(
     # ---- Step 1: 连接已启动的 Policy (GPU0) ----
     logger.info(f"[1/4] Connect to policy vLLM (GPU0:{policy_port}): lora={lora_label}")
     policy_client = VLLMClient(
-        model_name="policy",
-        model_path=base_model_path,
         host=host,
         port=policy_port,
         launch_server=False,  # 不启动服务，只连接
@@ -240,21 +238,19 @@ def run_single_eval(
     # ---- Step 2: 连接已启动的 Target + Guard (GPU1) 进行 ASR 测试 ----
     logger.info(f"[3/4] Connect to ASR test services (GPU1:{target_port}/{guard_port}): lora={lora_label}")
     target_cfg = {
-        "model_name": "target",
         "model_path": target_model_path,
         "host": host,
         "port": target_port,
-        "gpu_id": "0",  # GPU1 (CUDA_VISIBLE_DEVICES=1)
+        "gpu_id": "1",  # GPU1 (eval时target在GPU1)
         "timeout": timeout,
         "gpu_memory_utilization": gpu_memory_utilization,
         "max_model_len": max_model_len,
     }
     guard_cfg = {
-        "model_name": "guard",
         "model_path": guard_model_path,
         "host": host,
         "port": guard_port,
-        "gpu_id": "1",  # GPU1 (CUDA_VISIBLE_DEVICES=1)
+        "gpu_id": "2",  # GPU2 (eval时guard在GPU2)
         "timeout": timeout,
         "gpu_memory_utilization": gpu_memory_utilization,
         "max_model_len": max_model_len,
@@ -365,10 +361,9 @@ def main(argv: Optional[List[str]] = None):
         except ImportError as e:
             raise ImportError(f"无法加载 jailbreak_prompts: {e}")
 
-    # 设置 GPU (policy=GPU0, target+guard=GPU1 分开运行)
-    # 注意: 由于 policy 和 target/guard 不在同一时间运行, 可以共用 visible devices
-    # 但为了简化, 我们设置 CUDA_VISIBLE_DEVICES=0,1
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1"
+    # 设置 GPU (policy=GPU0, target=GPU1, guard=GPU2 分开运行)
+    # 注意: eval.py连接已启动的vLLM服务，CUDA_VISIBLE_DEVICES设置主要是防止意外占用GPU
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"
 
     # 输出目录
     ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

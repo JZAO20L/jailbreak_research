@@ -22,7 +22,7 @@ project_root = os.path.dirname(package_dir)  # jailbreak_research
 # 添加项目路径
 sys.path.insert(0, project_root)
 
-from self_evolve_skills_jailbreak.core.skill_library import SkillLibrary
+from self_evolve_skills_jailbreak.src.skill_library import SkillLibrary
 from self_evolve_skills_jailbreak.utils.skill_exporter import SkillExporter
 
 

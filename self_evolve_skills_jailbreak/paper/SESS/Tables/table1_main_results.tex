@@ -1,0 +1,32 @@
+% Table 1: Main results across all datasets
+\begin{table}[t]
+\centering
+\caption{Same-model performance on Qwen3-4B across 5 datasets. \textbf{PAIR+SESS} and \textbf{DAN+SESS} denote PAIR iterative optimization augmented with SESS skill retrieval. DAN+SESS uses 6 fixed DAN templates as cold-start initialization (structural prior), not AutoDAN's genetic evolution.}
+\label{tab:main_results}
+\resizebox{\columnwidth}{!}{%
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Dataset} & \textbf{PAIR} & \textbf{PAIR+SESS} & \textbf{$\Delta$} & \textbf{AutoDAN} & \textbf{DAN+SESS} \\
+\midrule
+default & 55.5 & \textbf{79.0} & \textbf{+23.5} & 86.8 & \textbf{100.0} \\
+advbench & 77.3 & \textbf{81.0} & +3.7 & --- & \textbf{100.0} \\
+harmbench\_ctx & 81.0 & \textbf{98.0} & \textbf{+17.0} & --- & \textbf{100.0} \\
+harmbench\_std & 75.5 & \textbf{91.5} & \textbf{+16.0} & --- & \textbf{100.0} \\
+jailbreakBench & 72.0 & \textbf{88.0} & \textbf{+16.0} & --- & \textbf{100.0} \\
+\midrule
+\textbf{Average} & \textbf{72.3} & \textbf{87.5} & \textbf{+15.2} & \textbf{86.8} & \textbf{100.0} \\
+\bottomrule
+\end{tabular}%
+}
+\vspace{0.3em}
+\footnotesize
+\textit{Note:} ``---" indicates AutoDAN baseline not evaluated on that dataset. DAN+SESS retains PAIR's attacker-target dialogue loop with structural priors; AutoDAN evolves prompts via genetic operations without iterative refinement.
+\end{table}
+
+% 说明：
+% 1. PAIR baseline 55.5% 来自 transfer/Qwen3-4B/default/pair
+% 2. AutoDAN baseline 86.8% 来自 transfer/Qwen3-4B/default/autodan
+% 3. PAIR+SESS 79.0% 来自 transfer/Qwen3-4B/default/pair_skills_28
+% 4. DAN+SESS 100.0% 来自 transfer/Qwen3-4B/default/autodan_skills_1
+% 5. DAN+SESS 使用 6 个固定 DAN 模板作为初始 skills（结构先验），而非 AutoDAN 的进化机制

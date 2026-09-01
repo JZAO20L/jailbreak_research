@@ -292,7 +292,7 @@ TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 # 构建 Python 命令
 cd "$PROJECT_ROOT"
 
-GRID_SEARCH_CMD="python self_evolve_skills_jailbreak/scripts/grid_search.py \
+GRID_SEARCH_CMD="python self_evolve_skills_jailbreak/exp/layer1/scripts/grid_search_layer1.py \
     --eval_limit $EVAL_LIMIT \
     --num_epochs $NUM_EPOCHS \
     --max_iterations $MAX_ITERATIONS \

@@ -146,7 +146,7 @@ if __name__ == "__main__":
 
     policy_vllm = VLLMClient(
         model_name="policy_lora",
-        model_path="/home/tiger/models/Qwen3-4B",
+        model_path="/home/tiger/models/Qwen/Qwen3-4B",
         port=8100,
         gpu_id='0',
         launch_server=True,

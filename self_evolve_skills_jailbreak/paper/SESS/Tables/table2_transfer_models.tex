@@ -1,0 +1,22 @@
+% Table 2: Cross-model transfer (default dataset)
+\begin{table}[t]
+\centering
+\caption{Cross-model transfer results (default dataset). Skills trained on Qwen3-4B are transferred to other target models.}
+\label{tab:transfer_models}
+\resizebox{\columnwidth}{!}{%
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Target Model} & \textbf{PAIR} & \textbf{AutoDAN} & \textbf{PAIR+SESS} & \textbf{DAN+SESS} \\
+\midrule
+Qwen3-0.6B & 77.3 & 88.0 & \textbf{85.5} & \textbf{100.0} \\
+Qwen3-4B & 55.5 & 86.8 & \textbf{79.0} & \textbf{100.0} \\
+Qwen3-14B & 58.5 & 80.9 & \textbf{77.0} & \textbf{99.7} \\
+GPT-OSS-20B* & 0.2 & 12.5 & \textbf{12.9} & \textbf{30.0} \\
+\bottomrule
+\end{tabular}%
+}
+\vspace{0.3em}
+\footnotesize
+\textit{Note:} *GPT-OSS-20B is cross-family (OpenAI architecture); others are same-family. Structural priors (DAN templates) are critical for cross-family transfer: PAIR+SESS achieves 12.9\%, while DAN+SESS reaches 30.0\%.
+\end{table}

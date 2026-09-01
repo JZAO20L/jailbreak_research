@@ -74,30 +74,26 @@ class Qwen3MaxClient:
     ) -> str:
         """
         使用 qwen3-max 重写 prompt
-        
-        根据 TODO.md 提供的示例代码：
-        response = client.responses.create(
-            model="qwen3-max-2026-01-23",
-            input="你能做些什么？"
-        )
-        print(response.output_text)
+        使用标准 chat.completions.create API
         """
         try:
-            # 使用 responses.create (百炼 codingplan API)
-            response = self.client.responses.create(
+            # 使用 chat.completions.create (标准 OpenAI API)
+            response = self.client.chat.completions.create(
                 model=self.model,
-                input=prompt,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature,
+                max_tokens=max_tokens,
             )
-            
+
             # 获取模型回复
-            output = response.output_text
-            
+            output = response.choices[0].message.content or ""
+
             # 处理 </think> 标签 (如果有)
             if "</think>" in output:
                 output = output.split("</think>")[-1].strip()
-            
+
             return output
-            
+
         except Exception as e:
             print(f"[ERROR] qwen3-max API call failed: {e}")
             return ""
@@ -180,7 +176,7 @@ def run_asr_test(
 
     try:
         target_cfg = {
-            "model_name": "target",
+            # model_name 自动从服务器获取
             "model_path": "",
             "host": "127.0.0.1",
             "port": target_client.port,
@@ -190,7 +186,7 @@ def run_asr_test(
             "max_model_len": target_max_model_len,
         }
         guard_cfg = {
-            "model_name": "guard",
+            # model_name 自动从服务器获取
             "model_path": "",
             "host": "127.0.0.1",
             "port": guard_client.port,
@@ -324,16 +320,14 @@ def main():
     # 连接 Target 和 Guard (由 exp.sh 启动)
     print("\n连接 Target + Guard...")
     target_client = VLLMClient(
-        model_name="target",
-        model_path="/home/tiger/models/Qwen3-4B",
+        # model_name 自动从服务器获取
         host="127.0.0.1",
         port=args.target_port,
         launch_server=False,
         timeout=900,
     )
     guard_client = VLLMClient(
-        model_name="guard",
-        model_path="/home/tiger/models/Qwen3Guard-Gen-4B",
+        # model_name 自动从服务器获取
         host="127.0.0.1",
         port=args.guard_port,
         launch_server=False,

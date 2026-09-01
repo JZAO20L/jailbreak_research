@@ -11,12 +11,12 @@ from datetime import datetime
 
 # 使用绝对导入，避免相对导入问题
 try:
-    from ..core.skill import Skill
-    from ..core.skill_library import SkillLibrary
+    from ..src.skill import Skill
+    from ..src.skill_library import SkillLibrary
 except ImportError:
     # 当作为独立模块运行时
-    from self_evolve_skills_jailbreak.core.skill import Skill
-    from self_evolve_skills_jailbreak.core.skill_library import SkillLibrary
+    from self_evolve_skills_jailbreak.src.skill import Skill
+    from self_evolve_skills_jailbreak.src.skill_library import SkillLibrary
 
 
 class SkillExporter:

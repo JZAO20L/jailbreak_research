@@ -19,7 +19,7 @@ import os
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, PROJECT_ROOT)
 
-from RL4jailbreak.src.vllm_client import VLLMClient
+from src.vllm_client import VLLMClient
 
 
 def test_guard_service(port=8002):
@@ -109,7 +109,7 @@ def test_skill_guided_attack():
     print("\n=== Testing Skill Guided Attack ===")
 
     try:
-        from self_evolve_skills_jailbreak.core import SkillLibrary, SkillGuidedAttacker
+        from self_evolve_skills_jailbreak.src import SkillLibrary, SkillGuidedAttacker
 
         # 连接服务
         guard_client = VLLMClient(port=8002, launch_server=False)
@@ -163,7 +163,7 @@ def test_reflector():
     print("\n=== Testing Reflector Module ===")
 
     try:
-        from self_evolve_skills_jailbreak.core import SkillLibrary, SkillReflector
+        from self_evolve_skills_jailbreak.src import SkillLibrary, SkillReflector
 
         target_client = VLLMClient(port=8001, launch_server=False)
         skill_library = SkillLibrary(

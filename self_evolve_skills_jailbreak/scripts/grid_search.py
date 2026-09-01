@@ -129,9 +129,20 @@ def run_single_experiment(
         "--skip_launch",  # 连接已有服务
     ]
 
+    # 组件消融：添加实验名称后缀
+    if base_args.get("skip_evolution"):
+        exp_name = f"ablation_{combo['skill_call_mode']}_{combo['skill_extraction_mode']}_{combo['update_strategy']}"
+        cmd.extend(["--exp_name", exp_name])
+
     # 添加基础参数
     for key, value in base_args.items():
-        if value is not None:
+        if value is None:
+            continue
+        # 处理布尔类型参数（action="store_true"）
+        if key in ["skip_evolution", "skip_launch"]:
+            if value:
+                cmd.append(f"--{key}")
+        else:
             cmd.extend([f"--{key}", str(value)])
 
     # 运行实验（实时输出）
@@ -428,6 +439,10 @@ def main():
     parser.add_argument("--min_success_rate", type=float, default=0.7, help="低效 skill 清理阈值")
     parser.add_argument("--maintenance_interval", type=int, default=100, help="维护间隔步数")
 
+    # 组件消融参数
+    parser.add_argument("--skip_evolution", action="store_true", help="跳过Evolution阶段（组件消融）")
+    parser.add_argument("--cold_start_limit", type=int, default=None, help="Cold Start数据量限制（组件消融）")
+
     # 服务参数
     parser.add_argument("--guard_port", type=int, default=8002)
     parser.add_argument("--target_port", type=int, default=8001)
@@ -452,6 +467,8 @@ def main():
         "maintenance_interval": args.maintenance_interval,
         "guard_port": args.guard_port,
         "target_port": args.target_port,
+        "skip_evolution": args.skip_evolution,
+        "cold_start_limit": args.cold_start_limit,
     }
 
     if args.single:

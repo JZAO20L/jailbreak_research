@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>大语言模型越狱攻击与防御方法研究 - 中期报告 v1.0</title>
+    <style>
+        :root {
+            --primary-color: #2563EB;
+            --secondary-color: #3B82F6;
+            --text-color: #1E293B;
+            --bg-color: #FFFFFF;
+            --border-color: #E2E8F0;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.8;
+            color: var(--text-color);
+            background: var(--bg-color);
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+        
+        .header {
+            text-align: center;
+            padding: 60px 20px;
+            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+            color: white;
+            border-radius: 12px;
+            margin-bottom: 40px;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+            font-weight: 700;
+        }
+        
+        .header .meta {
+            font-size: 1.1rem;
+            opacity: 0.95;
+        }
+        
+        .toc {
+            background: #F8FAFC;
+            padding: 30px;
+            border-radius: 8px;
+            margin-bottom: 40px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .toc h2 {
+            margin-bottom: 20px;
+            color: var(--primary-color);
+        }
+        
+        .toc ul {
+            list-style: none;
+            padding-left: 20px;
+        }
+        
+        .toc li {
+            margin-bottom: 10px;
+        }
+        
+        .toc a {
+            color: var(--text-color);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+        
+        .toc a:hover {
+            color: var(--primary-color);
+        }
+        
+        section {
+            margin-bottom: 60px;
+            scroll-margin-top: 20px;
+        }
+        
+        h1, h2, h3, h4 {
+            color: var(--text-color);
+            margin-bottom: 20px;
+            font-weight: 600;
+        }
+        
+        h1 { font-size: 2rem; border-bottom: 3px solid var(--primary-color); padding-bottom: 10px; }
+        h2 { font-size: 1.5rem; border-bottom: 2px solid var(--border-color); padding-bottom: 8px; }
+        h3 { font-size: 1.25rem; }
+        h4 { font-size: 1rem; }
+        
+        p {
+            margin-bottom: 16px;
+            text-align: justify;
+        }
+        
+        ul, ol {
+            margin-bottom: 16px;
+            padding-left: 30px;
+        }
+        
+        li {
+            margin-bottom: 8px;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+            font-size: 0.95rem;
+            overflow-x: auto;
+            display: block;
+        }
+        
+        th, td {
+            border: 1px solid var(--border-color);
+            padding: 12px 16px;
+            text-align: left;
+        }
+        
+        th {
+            background: #F1F5F9;
+            font-weight: 600;
+        }
+        
+        tr:nth-child(even) {
+            background: #F8FAFC;
+        }
+        
+        tr:hover {
+            background: #EFF6FF;
+        }
+        
+        .figure {
+            text-align: center;
+            margin: 40px 0;
+            padding: 20px;
+            background: #F8FAFC;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+        
+        .figure img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+        
+        .figure figcaption {
+            margin-top: 15px;
+            font-size: 0.9rem;
+            color: #64748B;
+            font-style: italic;
+        }
+        
+        .highlight {
+            background: #FEF3C7;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+        
+        .success {
+            color: #059669;
+            font-weight: 600;
+        }
+        
+        .warning {
+            color: #D97706;
+            font-weight: 600;
+        }
+        
+        .progress-table {
+            margin: 30px 0;
+        }
+        
+        .progress-table td:nth-child(3) {
+            font-weight: 600;
+        }
+        
+        code {
+            background: #F1F5F9;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: "Fira Code", monospace;
+            font-size: 0.9em;
+        }
+        
+        pre {
+            background: #1E293B;
+            color: #E2E8F0;
+            padding: 20px;
+            border-radius: 8px;
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+        
+        pre code {
+            background: none;
+            padding: 0;
+        }
+        
+        blockquote {
+            border-left: 4px solid var(--primary-color);
+            padding-left: 20px;
+            margin: 20px 0;
+            color: #475569;
+            font-style: italic;
+        }
+        
+        .footer {
+            text-align: center;
+            padding: 40px 20px;
+            border-top: 1px solid var(--border-color);
+            margin-top: 60px;
+            color: #64748B;
+        }
+        
+        @media (max-width: 768px) {
+            body {
+                padding: 20px 15px;
+            }
+            
+            .header h1 {
+                font-size: 1.8rem;
+            }
+            
+            table {
+                font-size: 0.85rem;
+            }
+            
+            th, td {
+                padding: 8px 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>大语言模型越狱攻击与防御方法研究</h1>
+        <div class="meta">
+            <p><strong>中期报告 v1.0</strong></p>
+            <p>计算机科学与技术学院 · 计算机科学与技术</p>
+            <p>2026 年 6 月 16 日</p>
+        </div>
+    </div>
+
+    <div class="toc">
+        <h2>📑 目录</h2>
+        <ul>
+            <li><a href="#section1">1. 课题主要研究内容及进度情况</a></li>
+            <li><a href="#section2">2. 目前已完成的研究工作及进展</a>
+                <ul>
+                    <li><a href="#section2-1">2.1 AHR-GRPO 方法</a></li>
+                    <li><a href="#section2-2">2.2 SESS 方法</a></li>
+                    <li><a href="#section2-3">2.3 Agentic-RL (待开展)</a></li>
+                </ul>
+            </li>
+            <li><a href="#section3">3. 后期拟完成的研究工作及进度安排</a></li>
+            <li><a href="#section4">4. 存在的困难与问题</a></li>
+            <li><a href="#section5">5. 如期完成全部论文工作的可能性</a></li>
+        </ul>
+    </div>
+
+    <section id="section1">
+        <h1>1. 课题主要研究内容及进度情况</h1>
+        
+        <h2>1.1 研究背景</h2>
+        
+        <h3>1.1.1 大模型安全与对齐技术</h3>
+        <p>随着 ChatGPT、GPT-4、Qwen3 等大语言模型 (LLM) 的广泛应用，模型安全性成为关键问题。对齐技术 (Alignment) 通过训练使模型遵循人类价值观和安全准则，主要包括：</p>
+        <ul>
+            <li><strong>RLHF</strong> (Reinforcement Learning from Human Feedback)：基于人类反馈的强化学习</li>
+            <li><strong>Constitutional AI</strong>：基于宪法原则的训练</li>
+            <li><strong>Red Teaming</strong>：红队测试发现安全漏洞</li>
+        </ul>
+        <p>然而，对齐后的模型仍存在被"越狱"(Jailbreak) 攻击的风险，攻击者通过精心设计的提示词绕过模型的安全限制。</p>
+
+        <h3>1.1.2 Jailbreak 攻击研究现状</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>方法类型</th>
+                    <th>代表方法</th>
+                    <th>特点</th>
+                    <th>局限性</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>静态模板</td>
+                    <td>PAIR, AutoDAN</td>
+                    <td>预定义策略模板</td>
+                    <td>无法适应新防御</td>
+                </tr>
+                <tr>
+                    <td>梯度优化</td>
+                    <td>GCG, AutoDAN-GA</td>
+                    <td>基于梯度的 prompt 优化</td>
+                    <td>计算成本高，需白盒</td>
+                </tr>
+                <tr>
+                    <td>多轮对话</td>
+                    <td>Crescendo</td>
+                    <td>渐进式引导</td>
+                    <td>无跨案例知识迁移</td>
+                </tr>
+                <tr>
+                    <td>角色扮演</td>
+                    <td>Persona</td>
+                    <td>角色设定绕过</td>
+                    <td>效果不稳定</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>1.2 研究目的</h2>
+        <ol>
+            <li><strong>推进 jailbreak prompt 合成边界</strong>：提升攻击绝对能力，保证方法的有效性，探索高效且可迁移的攻击策略</li>
+            <li><strong>针对传统方法的高资源需求</strong>：优化训练效率，实现低资源需求的 MaaS (Model as a Service) 方案，降低实验成本</li>
+            <li><strong>产出易用的方法模块</strong>：构建可复用的 Skills 系统，提供开源的攻击工具与数据合成管道</li>
+        </ol>
+
+        <h2>1.3 研究方法</h2>
+        
+        <h3>1.3.1 AHR-GRPO（自适应混合奖励 GRPO）</h3>
+        <p>创新性地提出方差驱动的自适应奖励权重机制，动态平衡稀疏的 ASR 奖励与稠密的 Judge 奖励，实现高效、稳定的强化学习训练。</p>
+
+        <h3>1.3.2 SESS（自进化技能系统）</h3>
+        <p>设计 Skills 库自进化机制，从成功攻击轨迹中提取可复用的策略模板，实现知识积累与跨案例迁移。</p>
+
+        <h3>1.3.3 Agentic-RL</h3>
+        <p>将 AHR-GRPO 与 SESS 结合，在自进化 Skills 环境中进行强化学习训练，实现过程奖励与结果奖励的协同优化。</p>
+
+        <h2>1.4 进度情况</h2>
+        <table class="progress-table">
+            <thead>
+                <tr>
+                    <th>章节</th>
+                    <th>方法</th>
+                    <th>进度</th>
+                    <th>关键成果</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>第一章</strong></td>
+                    <td>AHR-GRPO</td>
+                    <td><span class="highlight">85%</span></td>
+                    <td class="success">最佳 ASR 33.2% (+2.4% vs baseline)</td>
+                </tr>
+                <tr>
+                    <td><strong>第二章</strong></td>
+                    <td>SESS</td>
+                    <td><span class="highlight">95%</span></td>
+                    <td class="success">最佳 ASR 99.7%，完成 217 组实验</td>
+                </tr>
+                <tr>
+                    <td><strong>第三章</strong></td>
+                    <td>Agentic-RL</td>
+                    <td><span class="highlight">10%</span></td>
+                    <td>方法框架已设计</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section id="section2">
+        <h1>2. 目前已完成的研究工作及进展</h1>
+
+        <div id="section2-1">
+            <h2>2.1 AHR-GRPO 方法</h2>
+            
+            <h3>2.1.1 研究背景与动机</h3>
+            <ul>
+                <li>传统 GRPO 方法使用单一奖励信号，ASR 奖励稀疏导致早期探索困难</li>
+                <li>现有混合奖励方法采用固定权重，无法适应训练过程中奖励信号的动态变化</li>
+                <li>需要设计自适应机制，在稀疏 ASR 阶段依赖稠密 Judge 引导，在 ASR 信号分化后回归结果导向优化</li>
+            </ul>
+
+            <h3>2.1.2 核心方法</h3>
+            <p><strong>自适应 reward 权重计算公式：</strong></p>
+            <pre><code>λ_raw = σ(α · log(σ²_ASR / σ²_proc) + δ)</code></pre>
+            <ul>
+                <li><strong>双平滑机制</strong>：EMA 平滑 + 惯性平滑，防止单步跳变导致梯度震荡</li>
+                <li><strong>边界裁剪</strong>：λ ∈ [λ_min, λ_max]，防止信号坍缩</li>
+                <li><strong>冷启动机制</strong>：前 W 步固定λ=0.5，避免初始方差估计偏差</li>
+            </ul>
+
+            <h3>2.1.3 实验结果</h3>
+            
+            <div class="figure">
+                <img src="figures/output/AHR_GRPO_01_attack_prompt_selection.png" alt="Attack Prompt Selection">
+                <figcaption>图 2-1: Attack Prompt Selection - Top 3 策略筛选结果</figcaption>
+            </div>
+
+            <div class="figure">
+                <img src="figures/output/AHR_GRPO_03_judge_dimension.png" alt="Judge Dimension Comparison">
+                <figcaption>图 2-2: Judge Dimension Comparison - 12 组实验对比</figcaption>
+            </div>
+
+            <div class="figure">
+                <img src="figures/output/AHR_GRPO_04_adaptive_weight.png" alt="Adaptive Weight Results">
+                <figcaption>图 2-3: Adaptive Weight vs Fixed Weight - 自适应机制超越固定权重 (+0.9%)</figcaption>
+            </div>
+
+            <div class="figure">
+                <img src="figures/output/AHR_GRPO_05_reward_ablation.png" alt="Reward Ablation">
+                <figcaption>图 2-4: Reward Type Ablation - 混合 Reward 显著优于单一 Reward</figcaption>
+            </div>
+
+            <div class="figure">
+                <img src="figures/output/AHR_GRPO_06_summary.png" alt="AHR-GRPO Summary">
+                <figcaption>图 2-5: AHR-GRPO Progressive Improvement - 渐进式改进总结</figcaption>
+            </div>
+        </div>
+
+        <div id="section2-2">
+            <h2>2.2 SESS 方法</h2>
+            
+            <h3>2.2.1 方法设计</h3>
+            <ul>
+                <li><strong>Skill 数据结构</strong>：包含 content、source、统计信息、关键词标签、伤害类型</li>
+                <li><strong>检索评分</strong>：score = quality_score × (1 + 关键词匹配×0.3) × 类型匹配系数</li>
+                <li><strong>三阶段流程</strong>：Cold Start → Evolution → Test</li>
+            </ul>
+
+            <h3>2.2.2 实验结果（217 组实验）</h3>
+            
+            <div class="figure">
+                <img src="figures/output/SESS_01_sess_main_results.png" alt="SESS Main Results">
+                <figcaption>图 2-6: SESS Strategy & Data Distribution Effects - Layer 1-4 实验结果</figcaption>
+            </div>
+
+            <div class="figure">
+                <img src="figures/output/SESS_02_transfer_comparison.png" alt="Transfer Comparison">
+                <figcaption>图 2-7: Transferability Comparison - 同族迁移良好，跨族迁移是挑战</figcaption>
+            </div>
+
+            <div class="figure">
+                <img src="figures/output/SESS_03_transfer_comprehensive.png" alt="Comprehensive Transfer">
+                <figcaption>图 2-8: Comprehensive Transferability Analysis - Cross-Model 与 Cross-Dataset 对比</figcaption>
+            </div>
+
+            <div class="figure">
+                <img src="figures/output/SESS_04_same_family_transfer.png" alt="Same-Family Transfer">
+                <figcaption>图 2-9: Same-Family Transfer - Qwen 系列模型上 4 种方法对比</figcaption>
+            </div>
+
+            <h3>2.2.3 核心结论</h3>
+            <ul>
+                <li class="success"><strong>最佳方法</strong>：AutoDAN_w_SESS（同族 99%，跨族 32.5%）</li>
+                <li><strong>Evolution 必要性</strong>：DAN 场景不必要，pair 风格微弱 (+0.9%)</li>
+                <li class="warning"><strong>Skills 泛化性</strong>：同族良好 (85-95%)，跨族有限 (&lt;35%)</li>
+                <li><strong>数据策略</strong>：300 条足够，full_evolve 最优 (DAN 场景)</li>
+            </ul>
+        </div>
+
+        <div id="section2-3">
+            <h2>2.3 Agentic-RL (待开展)</h2>
+            <h3>2.3.1 方法设计</h3>
+            <ul>
+                <li><strong>自进化 Skills 环境构建</strong>：Skills 作为环境状态的一部分，动态更新</li>
+                <li><strong>三重奖励设置</strong>：ASR 结果奖励 + Judge 过程奖励 + Skills 质量奖励</li>
+                <li><strong>训练流程</strong>：Phase 1(Skills 初始化) → Phase 2(RL 训练) → Phase 3(协同演化)</li>
+            </ul>
+        </div>
+    </section>
+
+    <section id="section3">
+        <h1>3. 后期拟完成的研究工作及进度安排</h1>
+        
+        <h2>3.1 第一章 AHR-GRPO 后续工作</h2>
+        <ul>
+            <li class="success">✅ 已完成实验 3：自适应权重机制验证（+0.9% 额外改进）</li>
+            <li class="success">✅ 已验证自适应机制优越性：33.2% ASR</li>
+            <li class="success">✅ 已确认混合 Reward 有效性</li>
+            <li>待完成：分析λ演化曲线，验证物理直觉</li>
+            <li>待完成：撰写论文方法章节与实验章节</li>
+        </ul>
+
+        <h2>3.2 第二章 SESS 后续工作</h2>
+        <ul>
+            <li class="success">✅ 已完成 217 组实验</li>
+            <li class="success">✅ 已得出主要结论</li>
+            <li>待完成：整理实验数据，撰写完整实验报告</li>
+            <li>待完成：分析跨族迁移失败的根本原因</li>
+            <li>待完成：整理 Skills 库，开源最佳 Skills 模板</li>
+        </ul>
+
+        <h2>3.3 第三章 Agentic-RL 工作计划</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>阶段</th>
+                    <th>时间</th>
+                    <th>任务</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>方法实现</td>
+                    <td>2 周</td>
+                    <td>搭建自进化 Skills 环境、集成 AHR-GRPO、实现协同演化</td>
+                </tr>
+                <tr>
+                    <td>实验验证</td>
+                    <td>4 周</td>
+                    <td>Baseline 对比、消融实验、跨模型迁移测试</td>
+                </tr>
+                <tr>
+                    <td>结果分析与论文撰写</td>
+                    <td>2 周</td>
+                    <td>训练曲线分析、Skills 演化可视化、对比讨论</td>
+                </tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section id="section4">
+        <h1>4. 存在的困难与问题</h1>
+        
+        <h2>4.1 计算资源需求较大</h2>
+        <ul>
+            <li>AHR-GRPO 实验：每实验约需 4×GPU(A800-80G)，训练 2-4 小时/1000 步</li>
+            <li>SESS 实验：已完成 217 组，消耗大量 GPU 资源</li>
+            <li>第三章 Agentic-RL：预计需额外数百 GPU 卡时</li>
+        </ul>
+
+        <h2>4.2 跨族迁移挑战</h2>
+        <ul>
+            <li class="warning">SESS 实验揭示：所有方法在 gpt-oss-20b 上效果大幅下降（best 仅 32.5%）</li>
+            <li>需要新方法：当前 Skills 缺乏跨族泛化性</li>
+        </ul>
+
+        <h2>4.3 论文时间压力</h2>
+        <ul>
+            <li>三章内容整合：需统一叙事逻辑</li>
+            <li>实验周期：第三章实验预计需 6 周</li>
+            <li>投稿时间窗口：需在毕业前完成论文撰写与投稿</li>
+        </ul>
+    </section>
+
+    <section id="section5">
+        <h1>5. 如期完成全部论文工作的可能性</h1>
+        
+        <h2>5.1 已完成工作评估</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>章节</th>
+                    <th>方法</th>
+                    <th>进度</th>
+                    <th>关键成果</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>第一章</td>
+                    <td>AHR-GRPO</td>
+                    <td><strong>85%</strong></td>
+                    <td class="success">最佳 ASR 33.2%</td>
+                </tr>
+                <tr>
+                    <td>第二章</td>
+                    <td>SESS</td>
+                    <td><strong>95%</strong></td>
+                    <td class="success">最佳 ASR 99.7%</td>
+                </tr>
+                <tr>
+                    <td>第三章</td>
+                    <td>Agentic-RL</td>
+                    <td><strong>10%</strong></td>
+                    <td>方法框架已设计</td>
+                </tr>
+                <tr style="background: #EFF6FF;">
+                    <td><strong>总体</strong></td>
+                    <td><strong>-</strong></td>
+                    <td><strong>65%</strong></td>
+                    <td><strong>-</strong></td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>5.2 风险评估与应对策略</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>风险</th>
+                    <th>应对策略</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>Agentic-RL 训练不稳定</td>
+                    <td>设计稳定性保障机制（双平滑、边界裁剪、冷启动），参考 AHR-GRPO 经验</td>
+                </tr>
+                <tr>
+                    <td>跨族迁移效果仍不理想</td>
+                    <td>将此作为研究发现，分析原因而非强行提升，符合研究完整性</td>
+                </tr>
+                <tr>
+                    <td>时间不足</td>
+                    <td>优先完成核心实验，消融实验可视情况缩减</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>5.3 结论</h2>
+        <blockquote>
+            <p>基于已完成工作与后续计划，<strong class="success">如期完成全部论文工作的可能性较高</strong>。</p>
+            <p>需合理安排实验顺序，控制资源消耗，保证核心实验优先完成。论文结构清晰，三章节递进关系明确，具备 ICLR 投稿潜力。</p>
+        </blockquote>
+    </section>
+
+    <div class="footer">
+        <p><strong>文档版本：v1.0</strong> | 最后更新：2026 年 6 月 16 日</p>
+        <p>计算机科学与技术学院 · 大语言模型安全实验室</p>
+    </div>
+</body>
+</html>

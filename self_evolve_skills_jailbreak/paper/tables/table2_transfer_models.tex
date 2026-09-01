@@ -1,0 +1,35 @@
+% Table 2: 跨模型迁移效果
+\begin{table}[t]
+\centering
+\caption{跨模型迁移效果（default 数据集）。SESS skills 在 Qwen3-4B 上训练，直接迁移到其他目标模型。同族模型（Qwen 系列）迁移效果显著；跨族模型（GPT-OSS-20B）效果有限但仍有提升。结构先验（DAN 模板）对跨族迁移至关重要。}
+\label{tab:transfer_models}
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \multicolumn{4}{c}{\textbf{Target Model}} & \textbf{Avg} \\
+\cmidrule(lr){2-5}
+ & \textbf{0.6B} & \textbf{4B} & \textbf{14B} & \textbf{20B*} & \\
+\midrule
+\multicolumn{6}{l}{\textit{Baseline Methods}} \\
+PAIR & 77.3 & 55.5 & 58.5 & 0.2 & 47.9 \\
+AutoDAN & 88.0 & 86.8 & 80.9 & 12.5 & 67.1 \\
+\midrule
+\multicolumn{6}{l}{\textit{+ SESS (无结构先验)}} \\
+PAIR + SESS & 85.5 & 79.0 & 77.0 & 12.9 & 63.6 \\
+$\Delta$ vs PAIR & \textbf{+8.2} & \textbf{+23.5} & \textbf{+18.5} & +12.7 & --- \\
+\midrule
+\multicolumn{6}{l}{\textit{+ SESS (有结构先验: DAN 模板)}} \\
+DAN + SESS & 100.0 & 100.0 & 99.7 & \textbf{30.0} & --- \\
+$\Delta$ vs AutoDAN & +12.0 & +13.2 & +18.8 & \textbf{+17.5} & --- \\
+\bottomrule
+\multicolumn{6}{l}{\small *GPT-OSS-20B 为跨族模型（OpenAI 架构），其余为同族模型。} \\
+\multicolumn{6}{l}{\small 结构先验（DAN 模板）对跨族迁移至关重要：PAIR+SESS 仅 12.9\%，DAN+SESS 达 30.0\%。} \\
+\end{tabular}
+\end{table}
+
+% 数据来源：
+% 0.6B: transfer/Qwen3-0.6B/default/
+% 4B: transfer/Qwen3-4B/default/
+% 14B: transfer/Qwen3-14B-FP8/default/
+% 20B: transfer/gpt-oss-20b/default/
+% 注意：DAN+SESS 使用固定 DAN 模板，而非 AutoDAN 的进化机制

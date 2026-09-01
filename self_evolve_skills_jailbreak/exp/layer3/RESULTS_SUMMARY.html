@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Layer 3 实验结果总结</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #34495e;
+            margin-top: 30px;
+        }
+        .summary-box {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .highlight {
+            background-color: #e8f6f3;
+            border-left: 4px solid #27ae60;
+            padding: 15px;
+            margin: 10px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+            padding: 12px;
+            text-align: left;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #eee;
+        }
+        tr:hover {
+            background-color: #f8f9fa;
+        }
+        .best {
+            background-color: #d4edda;
+            color: #155724;
+            font-weight: bold;
+        }
+        .chart-container {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+        }
+        .bar-chart {
+            width: 300px;
+        }
+        .bar {
+            background-color: #3498db;
+            margin: 5px 0;
+            padding: 8px;
+            color: white;
+            border-radius: 4px;
+        }
+        .bar.best-bar {
+            background-color: #27ae60;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .stat-value {
+            font-size: 24px;
+            color: #3498db;
+            font-weight: bold;
+        }
+        .stat-label {
+            color: #7f8c8d;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Layer 3 实验结果总结</h1>
+
+    <div class="summary-box">
+        <h2>📊 实验概述</h2>
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-value">17</div>
+                <div class="stat-label">完成实验数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">98.8%</div>
+                <div class="stat-label">最高 ASR</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">6</div>
+                <div class="stat-label">DAN 模板数量</div>
+            </div>
+        </div>
+
+        <p><strong>固定配置：</strong></p>
+        <ul>
+            <li>skill_call_mode: single_call</li>
+            <li>skill_extraction_mode: trajectory</li>
+            <li>skill_source: DAN 模板 (6 个)</li>
+            <li>max_workers: 64</li>
+        </ul>
+    </div>
+
+    <div class="summary-box">
+        <h2>🏆 最佳配置</h2>
+        <div class="highlight">
+            <p><strong>full_evolve 模式效果最佳</strong></p>
+            <p>无 Cold Start，直接使用 DAN 模板：平均 ASR <strong>98.2%</strong></p>
+            <p>最佳单实验：dan_start_large_full_evolve，ASR <strong>98.8%</strong></p>
+        </div>
+    </div>
+
+    <div class="summary-box">
+        <h2>📈 按配比平均 ASR</h2>
+        <div class="chart-container">
+            <div class="bar-chart">
+                <div class="bar best-bar" style="width: 98.2%">full_evolve: 98.2%</div>
+                <div class="bar" style="width: 92.7%">balanced: 92.7%</div>
+                <div class="bar" style="width: 89.9%">early: 89.9%</div>
+                <div class="bar" style="width: 86.5%">evo: 86.5%</div>
+            </div>
+        </div>
+        <p style="color: #e74c3c; margin-top: 10px;">
+            ⚠️ <strong>关键发现：</strong>引入 Cold Start 反而降低 ASR！DAN 模板不需要"积累"阶段。
+        </p>
+    </div>
+
+    <div class="summary-box">
+        <h2>📋 详细实验结果</h2>
+
+        <h3>Large 数据量 (1000 prompts)</h3>
+        <table>
+            <tr>
+                <th>实验</th>
+                <th>CS Size</th>
+                <th>Evo Size</th>
+                <th>CS ASR</th>
+                <th>Evo ASR</th>
+                <th>Test ASR</th>
+                <th>Skills</th>
+            </tr>
+            <tr class="best">
+                <td>dan_start_large_full_evolve</td>
+                <td>0</td>
+                <td>1000</td>
+                <td>-</td>
+                <td>98.4%</td>
+                <td>98.8%</td>
+                <td>6</td>
+            </tr>
+            <tr>
+                <td>dan_start_large_full_evolve_statistical</td>
+                <td>0</td>
+                <td>1000</td>
+                <td>-</td>
+                <td>98.4%</td>
+                <td>97.4%</td>
+                <td>6</td>
+            </tr>
+            <tr>
+                <td>dan_start_large_balanced</td>
+                <td>200</td>
+                <td>800</td>
+                <td>96.5%</td>
+                <td>94.8%</td>
+                <td>97.0%</td>
+                <td>65</td>
+            </tr>
+            <tr>
+                <td>dan_start_large_early</td>
+                <td>300</td>
+                <td>700</td>
+                <td>92.3%</td>
+                <td>93.0%</td>
+                <td>91.6%</td>
+                <td>26</td>
+            </tr>
+            <tr>
+                <td>dan_start_large_evo</td>
+                <td>100</td>
+                <td>900</td>
+                <td>96.0%</td>
+                <td>85.7%</td>
+                <td>81.3%</td>
+                <td>28</td>
+            </tr>
+        </table>
+
+        <h3>Medium 数据量 (500 prompts)</h3>
+        <table>
+            <tr>
+                <th>实验</th>
+                <th>CS Size</th>
+                <th>Evo Size</th>
+                <th>CS ASR</th>
+                <th>Evo ASR</th>
+                <th>Test ASR</th>
+                <th>Skills</th>
+            </tr>
+            <tr class="best">
+                <td>dan_start_medium_full_evolve</td>
+                <td>0</td>
+                <td>500</td>
+                <td>-</td>
+                <td>98.2%</td>
+                <td>98.3%</td>
+                <td>6</td>
+            </tr>
+            <tr>
+                <td>dan_start_medium_balanced_success_only</td>
+                <td>100</td>
+                <td>400</td>
+                <td>96.0%</td>
+                <td>94.2%</td>
+                <td>94.7%</td>
+                <td>41</td>
+            </tr>
+            <tr>
+                <td>dan_start_medium_early</td>
+                <td>150</td>
+                <td>350</td>
+                <td>96.0%</td>
+                <td>92.6%</td>
+                <td>93.5%</td>
+                <td>32</td>
+            </tr>
+            <tr>
+                <td>dan_start_medium_evo_statistical</td>
+                <td>50</td>
+                <td>450</td>
+                <td>100.0%</td>
+                <td>92.4%</td>
+                <td>92.6%</td>
+                <td>21</td>
+            </tr>
+            <tr>
+                <td>dan_start_medium_balanced_statistical</td>
+                <td>100</td>
+                <td>400</td>
+                <td>94.0%</td>
+                <td>90.2%</td>
+                <td>88.7%</td>
+                <td>34</td>
+            </tr>
+            <tr>
+                <td>dan_start_medium_evo_success_only</td>
+                <td>50</td>
+                <td>450</td>
+                <td>100.0%</td>
+                <td>91.6%</td>
+                <td>90.6%</td>
+                <td>25</td>
+            </tr>
+            <tr>
+                <td>dan_start_medium_evo</td>
+                <td>50</td>
+                <td>450</td>
+                <td>100.0%</td>
+                <td>81.6%</td>
+                <td>83.3%</td>
+                <td>27</td>
+            </tr>
+            <tr>
+                <td>dan_start_medium_balanced</td>
+                <td>100</td>
+                <td>400</td>
+                <td>95.0%</td>
+                <td>90.2%</td>
+                <td>88.2%</td>
+                <td>28</td>
+            </tr>
+        </table>
+
+        <h3>Small 数据量 (300 prompts)</h3>
+        <table>
+            <tr>
+                <th>实验</th>
+                <th>CS Size</th>
+                <th>Evo Size</th>
+                <th>CS ASR</th>
+                <th>Evo ASR</th>
+                <th>Test ASR</th>
+                <th>Skills</th>
+            </tr>
+            <tr class="best">
+                <td>dan_start_small_full_evolve</td>
+                <td>0</td>
+                <td>300</td>
+                <td>-</td>
+                <td>99.3%</td>
+                <td>98.3%</td>
+                <td>6</td>
+            </tr>
+            <tr>
+                <td>dan_start_small_balanced</td>
+                <td>60</td>
+                <td>240</td>
+                <td>98.3%</td>
+                <td>91.7%</td>
+                <td>95.0%</td>
+                <td>27</td>
+            </tr>
+            <tr>
+                <td>dan_start_small_early</td>
+                <td>90</td>
+                <td>210</td>
+                <td>94.4%</td>
+                <td>82.4%</td>
+                <td>84.7%</td>
+                <td>32</td>
+            </tr>
+            <tr>
+                <td>dan_start_small_evo</td>
+                <td>30</td>
+                <td>270</td>
+                <td>100.0%</td>
+                <td>84.8%</td>
+                <td>84.9%</td>
+                <td>13</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="summary-box">
+        <h2>💡 结论与建议</h2>
+        <div class="highlight">
+            <p><strong>主要结论：</strong></p>
+            <ol>
+                <li>DAN 模板无需进化：full_evolve 模式效果最好（98.2% ASR）</li>
+                <li>数据量影响有限：small/medium/large 差异不大（90.7%~93.2%）</li>
+                <li>Cold Start 对 DAN 无益：引入 Cold Start 反而降低 ASR</li>
+            </ol>
+        </div>
+
+        <p><strong>建议后续实验：</strong></p>
+        <p>新增 `pure` 策略实验，验证"完全不修改 skills"的效果：</p>
+        <table>
+            <tr>
+                <th>策略</th>
+                <th>行为</th>
+                <th>预期</th>
+            </tr>
+            <tr class="best">
+                <td>pure</td>
+                <td>完全不修改 skills（不添加、不删除、不合并）</td>
+                <td>保护 DAN 模板，预期 ASR 最高</td>
+            </tr>
+            <tr>
+                <td>statistical</td>
+                <td>不添加，但执行维护（可能删除 DAN）</td>
+                <td>当前已有结果</td>
+            </tr>
+            <tr>
+                <td>success_only</td>
+                <td>成功时添加新 skill</td>
+                <td>可能引入噪音</td>
+            </tr>
+        </table>
+    </div>
+
+    <div class="summary-box" style="background-color: #f8d7da;">
+        <h2>⚠️ 失败实验</h2>
+        <p>以下实验因 Guard 服务崩溃而失败：</p>
+        <table>
+            <tr>
+                <th>实验 ID</th>
+                <th>实验</th>
+                <th>错误</th>
+            </tr>
+            <tr>
+                <td>19-24</td>
+                <td>large_early/balanced/evo 系列</td>
+                <td>Guard 服务连接失败</td>
+            </tr>
+        </table>
+        <p>需要重启 Guard 服务后继续运行。</p>
+    </div>
+
+    <footer style="text-align: center; color: #7f8c8d; margin-top: 30px;">
+        Generated: 2026-06-03
+    </footer>
+</body>
+</html>

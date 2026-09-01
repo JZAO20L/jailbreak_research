@@ -20,7 +20,7 @@ GPU配置：
 # =============================================================================
 # 模型路径
 # =============================================================================
-MODEL_BASE = "/home/tiger/models"
+MODEL_BASE = "/home/tiger/models/Qwen"
 
 POLICY_MODEL = f"{MODEL_BASE}/Qwen3-4B"
 TARGET_MODEL = f"{MODEL_BASE}/Qwen3-4B"

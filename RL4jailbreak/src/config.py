@@ -29,13 +29,13 @@ OUTPUT_DIR = os.path.join(PROJECT_DIR, "output")
 # =============================================================================
 
 # Base Model (用于改写的策略模型)
-BASE_MODEL_PATH = "/home/tiger/models/Qwen3-4B"
+BASE_MODEL_PATH = "/home/tiger/models/Qwen/Qwen3-4B"
 
 # Target Model (被攻击的目标模型)
-TARGET_MODEL_PATH = "/home/tiger/models/Qwen3-4B"
+TARGET_MODEL_PATH = "/home/tiger/models/Qwen/Qwen3-4B"
 
 # Guard Model (安全分类模型)
-GUARD_MODEL_PATH = "/home/tiger/models/Qwen3Guard-Gen-4B"
+GUARD_MODEL_PATH = "/home/tiger/models/Qwen/Qwen3Guard-Gen-4B"
 
 # =============================================================================
 # GPU 配置

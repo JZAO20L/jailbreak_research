@@ -1,0 +1,22 @@
+% Cross-Dataset Transfer Results (Qwen3-4B)
+\begin{table}[t]
+\centering
+\caption{Cross-dataset transfer results on Qwen3-4B across 5 benchmark datasets. SESS-enhanced methods show consistent improvement across all datasets, with the largest gains on harmbench and jailbreakBench.}
+\label{tab:transfer_datasets}
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{default} & \textbf{advbench} & \textbf{hb\_ctx} & \textbf{hb\_std} & \textbf{jbBench} \\
+\midrule
+no\_rewrite & 30.3 & 3.3 & 79.0 & 21.5 & 7.0 \\
+pair & 55.5 & 77.3 & 81.0 & 75.5 & 72.0 \\
+autodan & 86.8 & 75.4 & 87.0 & 75.5 & 80.0 \\
+deepinception & 40.4 & 41.0 & 80.0 & 47.5 & 38.0 \\
+persona & 32.3 & 16.7 & 67.0 & 36.0 & 20.0 \\
+\midrule
+\textbf{pair\_skills\_28} & 79.0 & \textbf{81.0} & \textbf{98.0} & \textbf{91.5} & \textbf{88.0} \\
+\midrule
+$\Delta$ vs pair & +23.5 & +3.7 & +17.0 & +16.0 & +16.0 \\
+\bottomrule
+\end{tabular}
+\end{table}

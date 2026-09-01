@@ -1,0 +1,31 @@
+% Table 1: SESS 对 PAIR 和 DAN 的提升（同模型评估）
+\begin{table}[t]
+\centering
+\caption{SESS 对基线方法的提升（Qwen3-4B，WildJailbreak 测试集）。PAIR+SESS 和 DAN+SESS 分别表示在 PAIR 和 DAN 模板上添加 SESS skill 库。DAN+SESS 使用 6 个固定 DAN 模板作为初始 skills（结构先验），而非 AutoDAN 的进化机制。}
+\label{tab:main_results}
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \textbf{ASR (\%)} & \textbf{Avg Iter} & \textbf{Skills} & \textbf{Structure Prior} \\
+\midrule
+\multicolumn{5}{l}{\textit{Baseline Methods (无 skill 库)}} \\
+PAIR & 55.5 & --- & 0 & --- \\
+AutoDAN & 86.8 & --- & 0 & --- \\
+\midrule
+\multicolumn{5}{l}{\textit{+ SESS (添加 skill 库)}} \\
+PAIR + SESS & 79.0 & 4.45 & 28 & 无 \\
+DAN + SESS & \textbf{100.0} & 1.10 & 6 & DAN 模板 \\
+\midrule
+\multicolumn{5}{l}{\textit{提升幅度 ($\Delta$)}} \\
+PAIR $\rightarrow$ PAIR+SESS & \textbf{+23.5} & --- & --- & --- \\
+AutoDAN $\rightarrow$ DAN+SESS & \textbf{+13.2} & --- & --- & --- \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+% 说明：
+% 1. PAIR baseline 55.5% 来自 transfer/Qwen3-4B/default/pair
+% 2. AutoDAN baseline 86.8% 来自 transfer/Qwen3-4B/default/autodan
+% 3. PAIR+SESS 79.0% 来自 transfer/Qwen3-4B/default/pair_skills_28
+% 4. DAN+SESS 100.0% 来自 transfer/Qwen3-4B/default/autodan_skills_1
+% 5. DAN+SESS 使用 6 个固定 DAN 模板作为初始 skills（结构先验），而非 AutoDAN 的进化机制

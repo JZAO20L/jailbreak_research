@@ -1,10 +1,18 @@
 #!/bin/bash
-# 实验2 评估脚本 - 带checkpoint机制，每个实验单独启动Policy+LoRA
+# =============================================================================
+# 实验2 评估脚本 - 重做版本
+#
+# 根据 TODO.md 实验重做 - 实验2:
+# - 3攻击prompt × 5权重配置 = 15个评估实验
+# - 每个训练实验对应一个评估实验
+# - 使用test集进行ASR评估
 #
 # 用法:
-#   bash experiments/hybrid_reward_exp/eval_exp2.sh              # 评估全部
-#   bash experiments/hybrid_reward_exp/eval_exp2.sh --strategy hypothetical_scenario  # 只评估指定策略
-#   bash experiments/hybrid_reward_exp/eval_exp2.sh --reset  # 清空checkpoint重头开始
+#   bash eval_exp2.sh                    # 评估全部15个实验
+#   bash eval_exp2.sh --attack_prompt hypothetical_scenario  # 只评估指定攻击prompt
+#   bash eval_exp2.sh --weight_config intent_only            # 只评估指定权重配置
+#   bash eval_exp2.sh --reset                                # 清空checkpoint重头开始
+# =============================================================================
 
 set -e
 
@@ -18,12 +26,12 @@ BASE_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 EVAL_DATA="${EVAL_DATA:-$BASE_DIR/../data/dataset/processed/10k/test.jsonl}"
 
 # 输出目录
-OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/judge_prompt_exp_output}"
+OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/output}"
 
 # 模型路径
-POLICY_MODEL="${POLICY_MODEL:-/home/tiger/models/Qwen3-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/home/tiger/models/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/home/tiger/models/Qwen3Guard-Gen-4B}"
+POLICY_MODEL="${POLICY_MODEL:-/home/tiger/models/Qwen/Qwen3-4B}"
+TARGET_MODEL="${TARGET_MODEL:-/home/tiger/models/Qwen/Qwen3-4B}"
+GUARD_MODEL="${GUARD_MODEL:-/home/tiger/models/Qwen/Qwen3Guard-Gen-4B}"
 
 # 端口
 POLICY_PORT=8003
@@ -31,33 +39,34 @@ TARGET_PORT=8001
 GUARD_PORT=8002
 
 # =========================
-# 策略 x 维度定义
+# 攻击prompt × 权重配置
 # =========================
-# 三个策略: hypothetical_scenario, creative_writing, role_playing
-# 每个策略4个维度 (3通用 + 1专用) x single评分 = 12个实验
-STRATEGIES=(
-    "hypothetical_scenario"
+ATTACK_PROMPTS=(
     "creative_writing"
+    "hypothetical_scenario"
     "role_playing"
 )
 
-GENERAL_DIMENSIONS=(
-    "idea_preservation"
-    "stealthiness"
-    "naturalness"
-)
-
-SCORING_METHODS=(
-    "single"
+WEIGHT_CONFIGS=(
+    "intent_only"
+    "stealth_only"
+    "strategy_only"
+    "potential_only"
+    "uniform"
 )
 
 # 解析命令行参数
-SELECTED_STRATEGY=""
+SELECTED_ATTACK=""
+SELECTED_WEIGHT=""
 RESET_CKPT=false
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --strategy)
-            SELECTED_STRATEGY="$2"
+        --attack_prompt)
+            SELECTED_ATTACK="$2"
+            shift 2
+            ;;
+        --weight_config)
+            SELECTED_WEIGHT="$2"
             shift 2
             ;;
         --reset)
@@ -68,9 +77,10 @@ while [[ $# -gt 0 ]]; do
             echo "用法: $0 [选项]"
             echo ""
             echo "选项:"
-            echo "  --strategy NAME      只评估指定策略"
-            echo "  --reset              清空checkpoint重头开始"
-            echo "  --help               显示帮助"
+            echo "  --attack_prompt NAME    只评估指定攻击prompt"
+            echo "  --weight_config NAME    只评估指定权重配置"
+            echo "  --reset                 清空checkpoint重头开始"
+            echo "  --help                  显示帮助"
             exit 0
             ;;
         *)
@@ -79,8 +89,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ -n "$SELECTED_STRATEGY" ]; then
-    STRATEGIES=("$SELECTED_STRATEGY")
+if [ -n "$SELECTED_ATTACK" ]; then
+    ATTACK_PROMPTS=("$SELECTED_ATTACK")
+fi
+
+if [ -n "$SELECTED_WEIGHT" ]; then
+    WEIGHT_CONFIGS=("$SELECTED_WEIGHT")
 fi
 
 # =========================
@@ -133,11 +147,11 @@ check_port_active() {
 
 # 启动Target和Guard服务（只需启动一次）
 start_target_guard() {
-    log "启动Target模型服务 (端口: $TARGET_PORT)..."
+    log "启动Target模型服务 (端口: $TARGET_PORT, GPU2)..."
     if ! check_port_active "$TARGET_PORT"; then
-        CUDA_VISIBLE_DEVICES=1 nohup vllm serve "$TARGET_MODEL" \
+        CUDA_VISIBLE_DEVICES=1 FLASHINFER_DISABLE_VERSION_CHECK=1 nohup vllm serve "$TARGET_MODEL" \
             --host 127.0.0.1 --port $TARGET_PORT \
-            --max-model-len 8192 --gpu-memory-utilization 0.4 \
+            --max-model-len 8192 --gpu-memory-utilization 0.9 \
             --served-model-name target \
             > "$OUTPUT_DIR/target_vllm.log" 2>&1 &
         for i in $(seq 1 120); do
@@ -148,11 +162,11 @@ start_target_guard() {
         log "Target服务已在运行"
     fi
 
-    log "启动Guard模型服务 (端口: $GUARD_PORT)..."
+    log "启动Guard模型服务 (端口: $GUARD_PORT, GPU3)..."
     if ! check_port_active "$GUARD_PORT"; then
-        CUDA_VISIBLE_DEVICES=2 nohup vllm serve "$GUARD_MODEL" \
+        CUDA_VISIBLE_DEVICES=2 FLASHINFER_DISABLE_VERSION_CHECK=1 nohup vllm serve "$GUARD_MODEL" \
             --host 127.0.0.1 --port $GUARD_PORT \
-            --max-model-len 8192 --gpu-memory-utilization 0.4 \
+            --max-model-len 8192 --gpu-memory-utilization 0.9 \
             --served-model-name guard \
             > "$OUTPUT_DIR/guard_vllm.log" 2>&1 &
         for i in $(seq 1 120); do
@@ -167,32 +181,25 @@ start_target_guard() {
 # 启动带LoRA的Policy服务
 start_policy_with_lora() {
     local lora_path=$1
+    local strategy_name=$2
 
     log "关闭旧的Policy服务..."
     pkill -f "vllm.*8003" 2>/dev/null || true
     sleep 3
 
-    if [ -z "$lora_path" ]; then
-        log "启动Policy服务（不带LoRA）(端口: $POLICY_PORT)..."
-        CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
-            --host 127.0.0.1 --port $POLICY_PORT \
-            --max-model-len 4096 --gpu-memory-utilization 0.9 \
-            --served-model-name policy \
-            > "$OUTPUT_DIR/policy_vllm.log" 2>&1 &
-    else
-        log "启动带LoRA的Policy服务 (端口: $POLICY_PORT)..."
-        log "LoRA路径: $lora_path"
-        
-        CUDA_VISIBLE_DEVICES=0 nohup vllm serve "$POLICY_MODEL" \
-            --host 127.0.0.1 --port $POLICY_PORT \
-            --max-model-len 4096 --gpu-memory-utilization 0.9 \
-            --served-model-name policy \
-            --enable-lora \
-            --lora-modules policy_lora="$lora_path" \
-            --max-lora-rank 32 \
-            > "$OUTPUT_DIR/policy_vllm.log" 2>&1 &
-    fi
-    
+    log "启动带LoRA的Policy服务 (端口: $POLICY_PORT, GPU0)..."
+    log "LoRA路径: $lora_path"
+    log "策略名称: $strategy_name"
+
+    CUDA_VISIBLE_DEVICES=0 FLASHINFER_DISABLE_VERSION_CHECK=1 nohup vllm serve "$POLICY_MODEL" \
+        --host 127.0.0.1 --port $POLICY_PORT \
+        --max-model-len 4096 --gpu-memory-utilization 0.9 \
+        --served-model-name policy \
+        --enable-lora \
+        --lora-modules policy_lora="$lora_path" \
+        --max-lora-rank 32 \
+        > "$OUTPUT_DIR/policy_vllm.log" 2>&1 &
+
     for i in $(seq 1 120); do
         if check_port_active "$POLICY_PORT"; then log "Policy启动成功!"; return 0; fi
         sleep 2
@@ -211,15 +218,14 @@ stop_policy() {
 # =========================
 # 主流程
 # =========================
-DIMENSIONS_PER_STRATEGY=$(( ${#GENERAL_DIMENSIONS[@]} + 1 ))
-TOTAL_EXPS=$(( ${#STRATEGIES[@]} * DIMENSIONS_PER_STRATEGY * ${#SCORING_METHODS[@]} ))
+TOTAL_EXPS=$(( ${#ATTACK_PROMPTS[@]} * ${#WEIGHT_CONFIGS[@]} ))
 
 # 加载checkpoint
 COMPLETED_STR=$(load_checkpoint)
 COMPLETED_COUNT=0
 if [ -n "$COMPLETED_STR" ]; then
     COMPLETED_COUNT=$(echo "$COMPLETED_STR" | wc -w)
-    log "检测到checkpoint: 已完成 $COMPLETED_COUNT 个评估，将跳过"
+    log "检测到checkpoint: 已完成 $COMPLETED_COUNT 个评估"
 fi
 
 if [ "$RESET_CKPT" = true ]; then
@@ -231,10 +237,12 @@ fi
 REMAINING=$((TOTAL_EXPS - COMPLETED_COUNT))
 
 log "============================================================"
-log "实验2 评估脚本"
+log "实验2 评估脚本 (重做版本)"
 log "============================================================"
 log "评估数据: $EVAL_DATA"
 log "输出目录: $OUTPUT_DIR"
+log "攻击prompt: ${ATTACK_PROMPTS[*]}"
+log "权重配置: ${WEIGHT_CONFIGS[*]}"
 log "总实验数: $TOTAL_EXPS"
 log "已完成: $COMPLETED_COUNT"
 log "剩余: $REMAINING"
@@ -246,19 +254,11 @@ mkdir -p "$OUTPUT_DIR"
 start_target_guard
 
 # =========================
-# Baseline评估 - 已在实验1中测试，跳过
-# =========================
-# Baseline 1: 直接测试原始prompt（不重写） - 实验1已测
-# Baseline 2: 使用policy model（不带LoRA）重写后的ASR - 实验1已测
-log ""
-log "Baseline评估已跳过（实验1已测试）"
-
-# =========================
 # 正式实验评估
 # =========================
 log ""
 log "============================================================"
-log "正式实验评估"
+log "开始正式实验评估"
 log "============================================================"
 
 # 遍历所有实验组合
@@ -268,62 +268,61 @@ if [ -n "$COMPLETED_STR" ]; then
     COMPLETED_LIST="$COMPLETED_STR"
 fi
 
-for strategy in "${STRATEGIES[@]}"; do
-    ALL_DIMENSIONS=("${GENERAL_DIMENSIONS[@]}" "$strategy")
+for attack in "${ATTACK_PROMPTS[@]}"; do
+    for weight in "${WEIGHT_CONFIGS[@]}"; do
+        EXP_IDX=$((EXP_IDX + 1))
 
-    for dim in "${ALL_DIMENSIONS[@]}"; do
-        for method in "${SCORING_METHODS[@]}"; do
-            EXP_IDX=$((EXP_IDX + 1))
+        EXP_KEY="${attack}_${weight}"
 
-            EXP_KEY="${strategy}_${dim}_${method}"
+        # 检查是否已完成
+        if echo " $COMPLETED_LIST " | grep -q " $EXP_KEY "; then
+            log "[跳过] $EXP_KEY (已评估)"
+            continue
+        fi
 
-            # 检查是否已完成
-            if echo " $COMPLETED_LIST " | grep -q " $EXP_KEY "; then
-                log "[跳过] $EXP_KEY (已评估)"
-                continue
-            fi
+        # 检查训练结果是否存在
+        EXP_OUTPUT="$OUTPUT_DIR/${EXP_KEY}"
+        LORA_PATH="$EXP_OUTPUT/final_lora"
+        if [ ! -d "$LORA_PATH" ]; then
+            log "[跳过] $EXP_KEY (训练结果不存在: $LORA_PATH)"
+            continue
+        fi
 
-            # 检查训练结果是否存在
-            EXP_OUTPUT="$OUTPUT_DIR/${EXP_KEY}"
-            LORA_PATH="$EXP_OUTPUT/final_lora"
-            if [ ! -d "$LORA_PATH" ]; then
-                log "[跳过] $EXP_KEY (训练结果不存在: $LORA_PATH)"
-                continue
-            fi
+        # 进度显示
+        print_progress $((COMPLETED_COUNT + 1)) $TOTAL_EXPS
+        log ""
+        log "[$EXP_IDX/$TOTAL_EXPS] 评估: attack=$attack, weight=$weight"
+        log "============================================================"
 
-            # 进度显示
-            print_progress $((COMPLETED_COUNT + 1)) $TOTAL_EXPS
-            log ""
-            log "[$EXP_IDX/$TOTAL_EXPS] 评估: $EXP_KEY"
-            log "============================================================"
+        # 启动带LoRA的Policy
+        start_policy_with_lora "$LORA_PATH" "$attack"
 
-            # 启动带LoRA的Policy
-            start_policy_with_lora "$LORA_PATH"
+        EVAL_OUTPUT="$EXP_OUTPUT/eval_results"
+        mkdir -p "$EVAL_OUTPUT"
 
-            EVAL_OUTPUT="$EXP_OUTPUT/eval_results"
-            mkdir -p "$EVAL_OUTPUT"
+        # 使用eval.py进行评估，指定策略名称
+        python "$BASE_DIR/scripts/eval.py" \
+            --eval_path "$EVAL_DATA" \
+            --lora_paths "$LORA_PATH" \
+            --base_model_path "$POLICY_MODEL" \
+            --target_model_path "$TARGET_MODEL" \
+            --guard_model_path "$GUARD_MODEL" \
+            --policy_port "$POLICY_PORT" \
+            --target_port "$TARGET_PORT" \
+            --guard_port "$GUARD_PORT" \
+            --strategy_name "$attack" \
+            --output_root "$EVAL_OUTPUT" \
+            --run_name "eval_${EXP_KEY}"
 
-            python "$BASE_DIR/scripts/eval.py" \
-                --eval_path "$EVAL_DATA" \
-                --lora_paths "$LORA_PATH" \
-                --base_model_path "$POLICY_MODEL" \
-                --target_model_path "$TARGET_MODEL" \
-                --guard_model_path "$GUARD_MODEL" \
-                --policy_port "$POLICY_PORT" \
-                --target_port "$TARGET_PORT" \
-                --guard_port "$GUARD_PORT" \
-                --output_root "$EVAL_OUTPUT" \
-                --run_name "eval_${EXP_KEY}"
+        # 关闭Policy服务
+        stop_policy
 
-            # 关闭Policy服务
-            stop_policy
+        # 更新checkpoint
+        COMPLETED_LIST="$COMPLETED_LIST $EXP_KEY"
+        COMPLETED_COUNT=$((COMPLETED_COUNT + 1))
+        save_checkpoint "$COMPLETED_LIST"
 
-            # 更新checkpoint
-            COMPLETED_LIST="$COMPLETED_LIST $EXP_KEY"
-            save_checkpoint "$COMPLETED_LIST"
-
-            log "[$EXP_IDX/$TOTAL_EXPS] 完成: $EXP_KEY"
-        done
+        log "[$EXP_IDX/$TOTAL_EXPS] 完成: $EXP_KEY"
     done
 done
 
@@ -332,7 +331,12 @@ log "============================================================"
 log "评估完成!"
 log "============================================================"
 log "结果保存在: $OUTPUT_DIR"
+log "总完成评估数: $COMPLETED_COUNT"
 log ""
+
+# 生成汇总报告
 log "生成汇总报告..."
-python "$SCRIPT_DIR/summarize_results.py" --output_dir "$OUTPUT_DIR"
+if [ -f "$SCRIPT_DIR/summarize_results.py" ]; then
+    python "$SCRIPT_DIR/summarize_results.py" --output_dir "$OUTPUT_DIR"
+fi
 log "============================================================"

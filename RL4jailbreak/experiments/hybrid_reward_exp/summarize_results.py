@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """
-实验2评估结果汇总脚本
+实验2评估结果汇总脚本 (重做版本)
+
+根据 TODO.md 实验重做 - 实验2:
+- 实验格式: {attack_prompt}_{weight_config}
+- 攻击prompt: creative_writing, hypothetical_scenario, role_playing
+- 权重配置: intent_only, stealth_only, strategy_only, potential_only, uniform
+
 自动扫描输出目录，汇总所有实验的ASR结果
 """
 
@@ -10,20 +16,19 @@ from pathlib import Path
 from typing import Dict, List, Optional
 import argparse
 
-# 已知的策略和维度名称（用于正确解析实验名称）
-KNOWN_STRATEGIES = [
-    "hypothetical_scenario",
+# 已知的攻击prompt和权重配置名称（用于正确解析实验名称）
+ATTACK_PROMPTS = [
     "creative_writing",
+    "hypothetical_scenario",
     "role_playing",
 ]
 
-KNOWN_DIMENSIONS = [
-    "idea_preservation",
-    "stealthiness",
-    "naturalness",
-    "hypothetical_scenario",  # 专用维度
-    "creative_writing",       # 专用维度
-    "role_playing",           # 专用维度
+WEIGHT_CONFIGS = [
+    "intent_only",
+    "stealth_only",
+    "strategy_only",
+    "potential_only",
+    "uniform",
 ]
 
 
@@ -49,34 +54,21 @@ def extract_asr(summary: Dict) -> Optional[float]:
 
 
 def parse_exp_name(exp_name: str) -> Dict[str, str]:
-    """解析实验名称，提取策略和维度"""
-    # 格式: {strategy}_{dimension}_single
-    # 例如: hypothetical_scenario_idea_preservation_single
-    #       hypothetical_scenario_hypothetical_scenario_single
+    """解析实验名称，提取攻击prompt和权重配置"""
+    # 格式: {attack_prompt}_{weight_config}
+    # 例如: creative_writing_intent_only
+    #       hypothetical_scenario_uniform
 
-    scoring = "unknown"
-    name_without_scoring = exp_name
-
-    # 移除评分方式后缀
-    if exp_name.endswith("_single"):
-        scoring = "single"
-        name_without_scoring = exp_name[:-7]  # 去掉 "_single"
-    elif exp_name.endswith("_tournament"):
-        scoring = "tournament"
-        name_without_scoring = exp_name[:-11]  # 去掉 "_tournament"
-
-    # 尝试匹配已知的策略和维度
-    for strategy in KNOWN_STRATEGIES:
-        if name_without_scoring.startswith(strategy + "_"):
-            dimension = name_without_scoring[len(strategy) + 1:]  # 去掉策略名和下划线
+    for attack in ATTACK_PROMPTS:
+        if exp_name.startswith(attack + "_"):
+            weight = exp_name[len(attack) + 1:]  # 去掉attack名和下划线
             return {
-                "strategy": strategy,
-                "dimension": dimension,
-                "scoring": scoring
+                "attack_prompt": attack,
+                "weight_config": weight,
             }
 
     # 如果无法解析，返回原始名称
-    return {"strategy": exp_name, "dimension": "unknown", "scoring": scoring}
+    return {"attack_prompt": exp_name, "weight_config": "unknown"}
 
 
 def collect_results(output_dir: Path) -> Dict[str, Dict]:
@@ -93,21 +85,11 @@ def collect_results(output_dir: Path) -> Dict[str, Dict]:
         exp_name = exp_dir.name
 
         # 跳过非实验目录
-        if exp_name in ["baseline_original_prompt", "baseline_base_model"]:
-            # 处理baseline
-            summary_path = exp_dir / exp_name / "summary.json"
-            summary = load_summary(summary_path)
-            if summary:
-                asr = extract_asr(summary)
-                results[exp_name] = {
-                    "type": "baseline",
-                    "asr": asr,
-                    "raw_summary": summary
-                }
+        if exp_name in ["baseline_original_prompt", "baseline_base_model", "logs"]:
             continue
 
         # 处理正式实验
-        # 格式: {strategy}_{dimension}_{scoring}/eval_results/eval_{strategy}_{dimension}_{scoring}/summary.json
+        # 格式: {attack_prompt}_{weight_config}/eval_results/eval_{attack_prompt}_{weight_config}/summary.json
         eval_dir = exp_dir / "eval_results"
         if not eval_dir.exists():
             continue
@@ -121,10 +103,8 @@ def collect_results(output_dir: Path) -> Dict[str, Dict]:
                 asr = extract_asr(summary)
                 parsed = parse_exp_name(exp_name)
                 results[exp_name] = {
-                    "type": "experiment",
-                    "strategy": parsed["strategy"],
-                    "dimension": parsed["dimension"],
-                    "scoring": parsed["scoring"],
+                    "attack_prompt": parsed["attack_prompt"],
+                    "weight_config": parsed["weight_config"],
                     "asr": asr,
                     "raw_summary": summary
                 }
@@ -136,44 +116,54 @@ def format_results(results: Dict[str, Dict]) -> str:
     """格式化结果为可读文本"""
     lines = []
     lines.append("=" * 80)
-    lines.append("实验2评估结果汇总")
+    lines.append("实验2评估结果汇总 (重做版本)")
     lines.append("=" * 80)
     lines.append("")
 
-    # Baseline结果
+    # 按攻击prompt分组显示实验结果
     lines.append("-" * 40)
-    lines.append("Baseline结果:")
-    lines.append("-" * 40)
-    for name in ["baseline_original_prompt", "baseline_base_model"]:
-        if name in results:
-            data = results[name]
-            asr = data.get("asr", 0) or 0
-            lines.append(f"  {name}: ASR = {asr:.1%}")
-    lines.append("")
-
-    # 按策略分组显示实验结果
-    lines.append("-" * 40)
-    lines.append("实验结果 (按策略分组):")
+    lines.append("实验结果 (按攻击prompt分组):")
     lines.append("-" * 40)
 
-    # 提取所有策略
-    strategies = set()
+    # 提取所有攻击prompt
+    attacks = set()
     for name, data in results.items():
-        if data["type"] == "experiment":
-            strategies.add(data["strategy"])
+        attacks.add(data["attack_prompt"])
 
-    for strategy in sorted(strategies):
-        lines.append(f"\n  [{strategy}]")
-        strategy_results = []
+    for attack in sorted(attacks):
+        lines.append(f"\n  [{attack}]")
+        attack_results = []
         for name, data in results.items():
-            if data["type"] == "experiment" and data["strategy"] == strategy:
+            if data["attack_prompt"] == attack:
                 asr = data.get("asr", 0) or 0
-                strategy_results.append((data["dimension"], asr))
+                attack_results.append((data["weight_config"], asr))
 
-        # 按维度排序
-        strategy_results.sort(key=lambda x: x[0])
-        for dim, asr in strategy_results:
-            lines.append(f"    {dim}: ASR = {asr:.1%}")
+        # 按权重配置排序
+        attack_results.sort(key=lambda x: WEIGHT_CONFIGS.index(x[0]) if x[0] in WEIGHT_CONFIGS else 99)
+        for weight, asr in attack_results:
+            lines.append(f"    {weight}: ASR = {asr:.1%}")
+
+    lines.append("")
+    lines.append("-" * 40)
+    lines.append("汇总表格:")
+    lines.append("-" * 40)
+
+    # 生成表格
+    lines.append("")
+    header = "攻击prompt          " + "  " + "  ".join([w[:10] for w in WEIGHT_CONFIGS])
+    lines.append(header)
+    lines.append("-" * len(header))
+
+    for attack in ATTACK_PROMPTS:
+        row = f"{attack:<20}"
+        for weight in WEIGHT_CONFIGS:
+            exp_key = f"{attack}_{weight}"
+            if exp_key in results:
+                asr = results[exp_key].get("asr", 0) or 0
+                row += f"  {asr:>7.1%}"
+            else:
+                row += "      N/A"
+        lines.append(row)
 
     lines.append("")
     lines.append("=" * 80)
@@ -184,37 +174,38 @@ def format_results(results: Dict[str, Dict]) -> str:
 def generate_markdown_table(results: Dict[str, Dict]) -> str:
     """生成Markdown格式的表格"""
     lines = []
-    lines.append("## 实验2评估结果\n")
-    lines.append("### Baseline\n")
-    lines.append("| 实验名称 | ASR |")
-    lines.append("|----------|-----|")
-    for name in ["baseline_original_prompt", "baseline_base_model"]:
-        if name in results:
-            asr = results[name].get("asr", 0) or 0
-            lines.append(f"| {name} | {asr:.1%} |")
+    lines.append("## 实验2评估结果 (重做版本)\n")
+    lines.append(f"攻击prompt: {ATTACK_PROMPTS}\n")
+    lines.append(f"权重配置: {WEIGHT_CONFIGS}\n")
 
-    lines.append("\n### 实验结果\n")
+    lines.append("\n### 结果表格\n")
+    header = "| 攻击prompt | " + " | ".join(WEIGHT_CONFIGS) + " |"
+    lines.append(header)
+    separator = "|------------|" + "|".join(["-" * 12] * len(WEIGHT_CONFIGS)) + "|"
+    lines.append(separator)
 
-    # 按策略分组
-    strategies = set()
-    for name, data in results.items():
-        if data["type"] == "experiment":
-            strategies.add(data["strategy"])
+    for attack in ATTACK_PROMPTS:
+        row = f"| {attack} |"
+        for weight in WEIGHT_CONFIGS:
+            exp_key = f"{attack}_{weight}"
+            if exp_key in results:
+                asr = results[exp_key].get("asr", 0) or 0
+                row += f" {asr:.1%} |"
+            else:
+                row += " N/A |"
+        lines.append(row)
 
-    for strategy in sorted(strategies):
-        lines.append(f"\n#### {strategy}\n")
-        lines.append("| 维度 | ASR |")
-        lines.append("|------|-----|")
+    lines.append("\n### 详细结果\n")
+    for attack in ATTACK_PROMPTS:
+        lines.append(f"\n#### {attack}\n")
+        lines.append("| 权重配置 | ASR |")
+        lines.append("|----------|-----|")
 
-        strategy_results = []
-        for name, data in results.items():
-            if data["type"] == "experiment" and data["strategy"] == strategy:
-                asr = data.get("asr", 0) or 0
-                strategy_results.append((data["dimension"], asr))
-
-        strategy_results.sort(key=lambda x: x[0])
-        for dim, asr in strategy_results:
-            lines.append(f"| {dim} | {asr:.1%} |")
+        for weight in WEIGHT_CONFIGS:
+            exp_key = f"{attack}_{weight}"
+            if exp_key in results:
+                asr = results[exp_key].get("asr", 0) or 0
+                lines.append(f"| {weight} | {asr:.1%} |")
 
     return "\n".join(lines)
 

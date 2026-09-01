@@ -105,7 +105,7 @@ print(response.output_text)
 
 
 ## judge prompt exp(实验2)
-- 使用一个固定prompt模板，包含多judge维度，单一judge prompt进行多维度评估
+- 使用一个固定prompt模板，包含多judge维度，单一judge prompt进行多维度评估，然后解析出分数；
 - 维度设计：有用性&正交性，保证对jailbreak prompt rewrite任务的指向性，同时各维度尽可能正交不相关
     - idea保留程度
     - 攻击隐蔽程度

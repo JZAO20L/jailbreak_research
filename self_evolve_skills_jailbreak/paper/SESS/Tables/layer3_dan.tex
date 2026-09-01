@@ -1,0 +1,46 @@
+% Layer 3 & 4: DAN Template Results (Corrected)
+\begin{table}[t]
+\centering
+\caption{Layer 3--4: DAN template as initial skills. With strong prior templates, \textbf{full\_evolve} (no cold start) achieves near-perfect ASR. The 6 DAN templates remain unchanged during evolution, suggesting they are already optimal attack strategies. Layer 4 further refines to 99.7\% ASR.}
+\label{tab:layer3}
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Configuration} & \textbf{CS \%} & \textbf{ASR (\%)} & \textbf{Final Skills} & \textbf{Added} \\
+\midrule
+\multicolumn{5}{l}{\textit{Layer 3: DAN Template Validation (large data, 1000)}} \\
+\textbf{DAN + full\_evolve} & \textbf{0\%} & \textbf{98.8} & \textbf{6} & \textbf{0} \\
+DAN + full\_evolve + stat & 0\% & 97.4 & 6 & 0 \\
+DAN + balanced & 20\% & 97.0 & 65 & 59 \\
+DAN + early & 30\% & 91.6 & 26 & 20 \\
+DAN + evo & 10\% & 81.3 & 28 & 22 \\
+\midrule
+\multicolumn{5}{l}{\textit{Layer 3.1: Core Mechanism (16 experiments, large data)}} \\
+\multicolumn{5}{l}{\textit{full\_evolve mode (0\% CS)}} \\
+every\_iter + success\_only & 0\% & 99.8 & 93 & 167 \\
+every\_iter + failure\_only & 0\% & 99.6 & 8 & 2 \\
+every\_iter + statistical & 0\% & 99.3 & 6 & 0 \\
+every\_iter + both & 0\% & 99.0 & 92 & 171 \\
+single\_call + statistical & 0\% & 98.5 & 6 & 0 \\
+single\_call + success\_only & 0\% & 97.9 & 99 & 126 \\
+single\_call + both & 0\% & 97.4 & 98 & 148 \\
+single\_call + failure\_only & 0\% & 97.0 & 23 & 17 \\
+\multicolumn{5}{l}{\textit{early mode (30\% CS)}} \\
+every\_iter + both & 30\% & 99.0 & 67 & 38 \\
+every\_iter + success\_only & 30\% & 98.5 & 41 & 11 \\
+every\_iter + failure\_only & 30\% & 98.1 & 72 & 31 \\
+every\_iter + statistical & 30\% & 97.9 & 54 & 0 \\
+single\_call + success\_only & 30\% & 92.3 & 83 & 69 \\
+single\_call + both & 30\% & 90.3 & 98 & 132 \\
+single\_call + failure\_only & 30\% & 89.1 & 100 & 72 \\
+single\_call + statistical & 30\% & 84.0 & 32 & 0 \\
+\midrule
+\multicolumn{5}{l}{\textit{Layer 4: DAN Data Ablation (12 experiments)}} \\
+\textbf{medium + evo} & 10\% & \textbf{99.7} & 54 & 41 \\
+small + evo & 10\% & 99.7 & 49 & 35 \\
+small + full\_evolve & 0\% & 99.7 & 84 & 79 \\
+medium + full\_evolve & 0\% & 99.6 & 90 & 105 \\
+large + full\_evolve & 0\% & 99.5 & 97 & 170 \\
+\bottomrule
+\end{tabular}
+\end{table}

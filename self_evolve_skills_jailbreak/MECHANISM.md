@@ -142,10 +142,10 @@ flowchart LR
 
 | 模块 | 文件 | 功能 |
 |------|------|------|
-| **Skill定义** | `core/skill.py` | 单个技能单元的数据结构 |
-| **Skill库** | `core/skill_library.py` | 存储、检索、聚类、合并、维护 |
-| **攻击器** | `core/attacker.py` | 执行技能引导的攻击 |
-| **反思器** | `core/reflector.py` | 分析结果、提取/改进技能 |
+| **Skill定义** | `src/skill.py` | 单个技能单元的数据结构 |
+| **Skill库** | `src/skill_library.py` | 存储、检索、聚类、合并、维护 |
+| **攻击器** | `src/attacker.py` | 执行技能引导的攻击 |
+| **反思器** | `src/reflector.py` | 分析结果、提取/改进技能 |
 | **配置** | `config.py` | 全局参数配置 |
 
 ---
@@ -677,7 +677,7 @@ ATTACK_CONFIG = {
 ```
 self_evolve_skills_jailbreak/
 ├── config.py                    # 全局配置
-├── core/
+├── src/
 │   ├── __init__.py
 │   ├── skill.py                 # Skill数据结构
 │   ├── skill_library.py         # Skill库管理

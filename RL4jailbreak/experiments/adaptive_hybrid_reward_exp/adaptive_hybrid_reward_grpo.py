@@ -63,9 +63,9 @@ from experiments.adaptive_hybrid_reward_exp.judge_prompts import (
 # =============================================================================
 DEFAULT_ARGS = {
     # Model paths
-    "policy_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
-    "target_model": "/root/autodl-tmp/models/Qwen/Qwen3-4B",
-    "guard_model": "/root/autodl-tmp/models/Qwen/Qwen3Guard-Gen-4B",
+    "policy_model": "/home/tiger/models/Qwen/Qwen3-4B",
+    "target_model": "/home/tiger/models/Qwen/Qwen3-4B",
+    "guard_model": "/home/tiger/models/Qwen/Qwen3Guard-Gen-4B",
     
     # LoRA config
     "lora_r": 16,
@@ -190,7 +190,6 @@ def parse_args():
 args = parse_args()
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ["SWANLAB_PROJECT"] = "JPG_adaptive_hybrid_reward_exp"
 
 LORA_DIR = os.path.join(args.output_dir, "final_lora")
@@ -217,21 +216,21 @@ logger = logging.getLogger("adaptive_hybrid_reward")
 # =============================================================================
 logger.info("Connecting to existing vLLM servers...")
 
+# Target server (GPU0, Qwen3-4B)
 TARGET_CLIENT = VLLMClient(
-    model_name="target",
-    model_path="unused",
     host="127.0.0.1",
     port=args.target_port,
+    model_name="/home/tiger/models/Qwen/Qwen3-4B",
     launch_server=False,
     timeout=30,
     temperature=0.0,
 )
 
+# Guard server (GPU1, Qwen3Guard-Gen-4B)
 GUARD_CLIENT = VLLMClient(
-    model_name="guard",
-    model_path="unused",
     host="127.0.0.1",
     port=args.guard_port,
+    model_name="/home/tiger/models/Qwen/Qwen3Guard-Gen-4B",
     launch_server=False,
     timeout=30,
     temperature=0.0,
@@ -530,19 +529,30 @@ def main():
     # Set seed
     torch.manual_seed(args.seed)
     random.seed(args.seed)
-    
-    # Load model
-    logger.info("Loading policy model on GPU 0...")
+
+    # Load model - multi GPU training, let accelerate handle device mapping
+    logger.info("Loading policy model...")
     tokenizer = AutoTokenizer.from_pretrained(args.policy_model, trust_remote_code=True, padding_side="left")
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    
-    policy = AutoModelForCausalLM.from_pretrained(
-        args.policy_model,
-        torch_dtype=torch.bfloat16,
-        device_map={"": "cuda:0"},
-        trust_remote_code=True,
-    )
+
+    # Check number of GPUs for device mapping
+    num_gpus = len(os.environ.get("CUDA_VISIBLE_DEVICES", "0").split(","))
+    if num_gpus > 1:
+        # Multi GPU training - no device_map, let accelerate handle it
+        policy = AutoModelForCausalLM.from_pretrained(
+            args.policy_model,
+            torch_dtype=torch.bfloat16,
+            trust_remote_code=True,
+        )
+    else:
+        # Single GPU
+        policy = AutoModelForCausalLM.from_pretrained(
+            args.policy_model,
+            torch_dtype=torch.bfloat16,
+            device_map={"": "cuda:0"},
+            trust_remote_code=True,
+        )
     
     try:
         policy.gradient_checkpointing_enable()
@@ -570,6 +580,10 @@ def main():
     
     # GRPO Config
     run_name = args.run_name or f"exp3_ema{args.ema_beta}_{args.attack_prompt}_{args.judge_prompt}"
+
+    # Check number of GPUs for vLLM tensor parallel
+    num_gpus = len(os.environ.get("CUDA_VISIBLE_DEVICES", "0").split(","))
+
     grpo_cfg = GRPOConfig(
         output_dir=args.output_dir,
         per_device_train_batch_size=args.per_device_train_batch_size,
@@ -593,6 +607,7 @@ def main():
         vllm_mode="colocate",
         vllm_enable_sleep_mode=False,
         vllm_gpu_memory_utilization=args.vllm_gpu_memory_utilization,
+        vllm_tensor_parallel_size=num_gpus,
     )
     
     # Trainer

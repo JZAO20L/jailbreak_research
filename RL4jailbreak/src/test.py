@@ -616,12 +616,12 @@ if __name__ == "__main__":
     parser.add_argument("--run_name", type=str, default=None)
 
     # ---------- target ----------
-    parser.add_argument("--target_model_path", type=str, default="/home/tiger/models/Qwen3-4B")
+    parser.add_argument("--target_model_path", type=str, default="/home/tiger/models/Qwen/Qwen3-4B")
     parser.add_argument("--target_port", type=int, default=8200)
     parser.add_argument("--target_gpu_id", type=str, default="0,1")
 
     # ---------- guard ----------
-    parser.add_argument("--guard_model_path", type=str, default="/home/tiger/models/Qwen3Guard-Gen-4B")
+    parser.add_argument("--guard_model_path", type=str, default="/home/tiger/models/Qwen/Qwen3Guard-Gen-4B")
     parser.add_argument("--guard_port", type=int, default=8201)
     parser.add_argument("--guard_gpu_id", type=str, default="0,1")
 
@@ -677,7 +677,7 @@ if __name__ == "__main__":
 
     # ---- build vLLM configs ----
     target_cfg = {
-        "model_name": "target",
+        # model_name 自动从服务器获取
         "model_path": args.target_model_path,
         "port": args.target_port,
         "gpu_id": args.target_gpu_id,
@@ -687,7 +687,7 @@ if __name__ == "__main__":
         "log_file": args.log_file,
     }
     guard_cfg = {
-        "model_name": "guard",
+        # model_name 自动从服务器获取
         "model_path": args.guard_model_path,
         "port": args.guard_port,
         "gpu_id": args.guard_gpu_id,

@@ -1,0 +1,28 @@
+% Layer 2: Data Strategy Ablation (Corrected)
+\begin{table}[t]
+\centering
+\caption{Layer 2: Data strategy ablation (36 experiments, showing traj+stat method). Data volume has minimal impact ($<$2\% difference), while the cold start/evolution ratio affects performance. The \textbf{early} strategy (30\% cold start) achieves the best results.}
+\label{tab:layer2}
+\small
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Data Size} & \textbf{Ratio} & \textbf{CS \%} & \textbf{ASR (\%)} & \textbf{$\Delta$} \\
+\midrule
+\multicolumn{5}{l}{\textit{Data Volume (traj+stat, fixed: early ratio)}} \\
+small (300) & early & 30\% & \textbf{80.6} & baseline \\
+medium (500) & early & 30\% & 79.0 & $-$1.6 \\
+large (1000) & early & 30\% & 80.0 & $-$0.6 \\
+\midrule
+\multicolumn{5}{l}{\textit{Ratio Strategy (traj+stat, fixed: small data)}} \\
+\textbf{early} & \textbf{30\% CS} & \textbf{30\%} & \textbf{80.6} & \textbf{best} \\
+balanced & 20\% CS & 20\% & 78.3 & $-$2.3 \\
+evo & 10\% CS & 10\% & 79.5 & $-$1.1 \\
+\midrule
+\multicolumn{5}{l}{\textit{All 4 Methods Aggregated}} \\
+traj + stat & --- & --- & 78.7 & best method \\
+fp + success & --- & --- & 77.7 & \\
+fp + stat & --- & --- & 76.6 & \\
+traj + success & --- & --- & 75.6 & \\
+\bottomrule
+\end{tabular}
+\end{table}

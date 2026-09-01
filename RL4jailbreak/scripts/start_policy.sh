@@ -3,8 +3,9 @@
 # Usage: bash start_policy.sh [--lora-path /path/to/lora]
 export CUDA_VISIBLE_DEVICES=0
 export VLLM_USE_MODELSCOPE=true
+export FLASHINFER_DISABLE_VERSION_CHECK=1
 
-MODEL_PATH="/home/tiger/models/Qwen3-4B"
+MODEL_PATH="/home/tiger/models/Qwen/Qwen3-4B"
 LORA_PATH=""
 
 # Parse arguments
@@ -20,7 +21,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-VLLM_ARGS="--served-model-name policy \
+VLLM_ARGS="
   --max-model-len 4096 \
   --port 8003 \
   --tensor-parallel-size 1 \

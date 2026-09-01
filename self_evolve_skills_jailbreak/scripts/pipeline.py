@@ -26,10 +26,10 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from self_evolve_skills_jailbreak.core.skill import Skill, DEFAULT_SKILLS
-from self_evolve_skills_jailbreak.core.skill_library import SkillLibrary
-from self_evolve_skills_jailbreak.core.attacker import SkillGuidedAttacker, AttackResult
-from self_evolve_skills_jailbreak.core.reflector import SkillReflector, SkillUpdater, ReflectionResult
+from self_evolve_skills_jailbreak.src.skill import Skill, DEFAULT_SKILLS
+from self_evolve_skills_jailbreak.src.skill_library import SkillLibrary
+from self_evolve_skills_jailbreak.src.attacker import SkillGuidedAttacker, AttackResult
+from self_evolve_skills_jailbreak.src.reflector import SkillReflector, SkillUpdater, ReflectionResult
 
 
 # =============================================================================
@@ -39,14 +39,25 @@ from self_evolve_skills_jailbreak.core.reflector import SkillReflector, SkillUpd
 class ExperimentConfig:
     """实验配置"""
 
-    # 服务配置（对应 start_guard.sh 和 start_policy.sh）
-    GUARD_PORT: int = 8002  # Guard 服务端口
-    TARGET_PORT: int = 8001  # Target 服务端口
+    # 服务配置
+    GUARD_PORT: int = 8002  # Guard 服务端口 (GPU 0)
+    ATTACKER_PORT: int = 8003  # Attacker 服务端口 (GPU 1, 固定)
+    TARGET_PORT: int = 8001  # Target 服务端口 (GPU 2+, 可变)
+
+    # GPU 配置
+    GUARD_GPU: str = "0"  # Guard GPU (固定)
+    ATTACKER_GPU: str = "1"  # Attacker GPU (固定)
+    TARGET_GPU: str = "2"  # Target GPU (可变)
 
     # 模型路径
     GUARD_MODEL_PATH: str = "/home/tiger/models/Qwen/Qwen3Guard-Gen-4B"
     GUARD_MODEL_NAME: str = "Qwen3Guard-Gen-4B"
 
+    # Attacker 模型 (固定，用于 rewrite/refine)
+    ATTACKER_MODEL_PATH: str = "/home/tiger/models/Qwen/Qwen3-4B"
+    ATTACKER_MODEL_NAME: str = "Qwen3-4B"
+
+    # Target 模型 (可变)
     TARGET_MODEL_PATH: str = "/home/tiger/models/Qwen/Qwen3-4B"
     TARGET_MODEL_NAME: str = "Qwen3-4B"
 
@@ -84,33 +95,50 @@ class ExperimentConfig:
 # LLM Client 初始化
 # =============================================================================
 
-def init_clients(config: ExperimentConfig):
-    """初始化 LLM clients"""
-    from RL4jailbreak.src.vllm_client import VLLMClient
+def init_clients(config: ExperimentConfig, skip_launch: bool = False):
+    """初始化 LLM clients
 
-    # Guard client (GPU 0)
+    GPU 分配:
+    - GPU 0: Guard (固定)
+    - GPU 1: Attacker (固定，用于 rewrite)
+    - GPU 2+: Target (可变)
+    """
+    from src.vllm_client import VLLMClient
+
+    # Guard client (GPU 0, 固定)
     guard_client = VLLMClient(
         model_name=config.GUARD_MODEL_NAME,
         model_path=config.GUARD_MODEL_PATH,
         port=config.GUARD_PORT,
         gpu_id=config.GUARD_GPU,
-        launch_server=True,
+        launch_server=not skip_launch,
         max_model_len=2048,
         temperature=0.0,
     )
 
-    # Target client (GPU 1+)
+    # Attacker client (GPU 1, 固定，用于 rewrite/refine)
+    attacker_client = VLLMClient(
+        model_name=config.ATTACKER_MODEL_NAME,
+        model_path=config.ATTACKER_MODEL_PATH,
+        port=config.ATTACKER_PORT,
+        gpu_id=config.ATTACKER_GPU,
+        launch_server=not skip_launch,
+        max_model_len=4096,
+        temperature=0.7,
+    )
+
+    # Target client (GPU 2+, 可变)
     target_client = VLLMClient(
         model_name=config.TARGET_MODEL_NAME,
         model_path=config.TARGET_MODEL_PATH,
         port=config.TARGET_PORT,
         gpu_id=config.TARGET_GPU,
-        launch_server=True,
+        launch_server=not skip_launch,
         max_model_len=4096,
         temperature=0.7,
     )
 
-    return guard_client, target_client
+    return guard_client, attacker_client, target_client
 
 
 # =============================================================================
@@ -118,7 +146,12 @@ def init_clients(config: ExperimentConfig):
 # =============================================================================
 
 def load_data(data_path: str, limit: Optional[int] = None) -> List[str]:
-    """加载 harmful prompts 数据"""
+    """加载 harmful prompts 数据
+
+    支持两种格式：
+    1. JSON 数组格式：["prompt1", "prompt2", ...] 或 [{"prompt": "..."}, ...]
+    2. JSONL 格式：每行一个 JSON 对象
+    """
     if not os.path.exists(data_path):
         print(f"[Warning] Data file not found: {data_path}")
         # 使用示例数据
@@ -131,14 +164,32 @@ def load_data(data_path: str, limit: Optional[int] = None) -> List[str]:
         ]
 
     with open(data_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+        content = f.read().strip()
 
     prompts = []
-    for item in data:
-        if isinstance(item, str):
-            prompts.append(item)
-        elif isinstance(item, dict):
-            prompts.append(item.get("prompt", item.get("question", "")))
+
+    # 尝试解析为 JSON 数组
+    try:
+        data = json.loads(content)
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, str):
+                    prompts.append(item)
+                elif isinstance(item, dict):
+                    prompts.append(item.get("prompt", item.get("question", "")))
+    except json.JSONDecodeError:
+        # JSONL 格式：逐行解析
+        for line in content.split("\n"):
+            if not line.strip():
+                continue
+            try:
+                item = json.loads(line)
+                if isinstance(item, str):
+                    prompts.append(item)
+                elif isinstance(item, dict):
+                    prompts.append(item.get("prompt", item.get("question", "")))
+            except json.JSONDecodeError:
+                continue
 
     if limit:
         prompts = prompts[:limit]
@@ -152,6 +203,7 @@ def load_data(data_path: str, limit: Optional[int] = None) -> List[str]:
 
 def phase_cold_start(
     target_client,
+    attacker_client,  # 用于 rewrite
     guard_client,
     seed_prompts: List[str],
     skill_library: SkillLibrary,
@@ -165,6 +217,7 @@ def phase_cold_start(
     冷启动阶段：攻击种子数据，成功后总结 skills
 
     Args:
+        attacker_client: 用于 rewrite/refine 的独立模型 (GPU 1 固定)
         skill_call_mode: "single_call" | "every_iteration"
         skill_extraction_mode: "final_prompt" | "trajectory"
         max_workers: 轨迹级并发数
@@ -184,6 +237,7 @@ def phase_cold_start(
     attacker = SkillGuidedAttacker(
         target_client=target_client,
         guard_client=guard_client,
+        rewrite_client=attacker_client,  # 使用独立的 attacker 模型
         skill_library=skill_library,
         max_iterations=config.MAX_ITERATIONS,
         skill_call_mode=skill_call_mode,
@@ -192,7 +246,7 @@ def phase_cold_start(
     )
 
     reflector = SkillReflector(
-        llm_client=target_client,
+        llm_client=attacker_client,  # 使用 attacker 模型来提取 skill
         skill_library=skill_library,
         verbose=False,
     )
@@ -373,6 +427,7 @@ def intermediate_eval(
 
 def phase_evolution(
     target_client,
+    attacker_client,  # 用于 rewrite
     guard_client,
     seed_prompts: List[str],
     skill_library: SkillLibrary,
@@ -388,6 +443,7 @@ def phase_evolution(
     进化阶段：攻击 → 反思 → 更新 skills（并发执行）
 
     Args:
+        attacker_client: 用于 rewrite/refine 的独立模型 (GPU 1 固定)
         skill_call_mode: "single_call" | "every_iteration"
         update_strategy: Skill 更新策略
         num_epochs: 进化轮数
@@ -412,6 +468,7 @@ def phase_evolution(
     attacker = SkillGuidedAttacker(
         target_client=target_client,
         guard_client=guard_client,
+        rewrite_client=attacker_client,  # 使用独立的 attacker 模型
         skill_library=skill_library,
         max_iterations=config.MAX_ITERATIONS,
         skill_call_mode=skill_call_mode,
@@ -420,7 +477,7 @@ def phase_evolution(
     )
 
     reflector = SkillReflector(
-        llm_client=target_client,
+        llm_client=attacker_client,  # 使用 attacker 模型来提取 skill
         skill_library=skill_library,
         verbose=False,
     )
@@ -587,6 +644,7 @@ def phase_evolution(
 
 def phase_test(
     target_client,
+    attacker_client,  # 用于 rewrite
     guard_client,
     test_prompts: List[str],
     skill_library: SkillLibrary,
@@ -599,6 +657,7 @@ def phase_test(
     测试阶段：固定 skills，统计 ASR 和平均轮次（并发执行）
 
     Args:
+        attacker_client: 用于 rewrite/refine 的独立模型 (GPU 1 固定)
         max_workers: 并发数
 
     Returns:
@@ -616,6 +675,7 @@ def phase_test(
     attacker = SkillGuidedAttacker(
         target_client=target_client,
         guard_client=guard_client,
+        rewrite_client=attacker_client,  # 使用独立的 attacker 模型
         skill_library=skill_library,
         max_iterations=config.MAX_ITERATIONS,
         skill_call_mode=skill_call_mode,
@@ -702,6 +762,9 @@ def run_full_pipeline(
     cs_ratio: Optional[float] = None,  # Layer 2: Cold Start 比例
     skill_source: str = "default",  # Layer 3: Skills来源 (default / dan_templates)
     skip_cold_start: bool = False,  # Layer 3: 跳过Cold Start阶段
+    skip_evolution: bool = False,  # 组件消融: 跳过Evolution阶段
+    cold_start_limit: Optional[int] = None,  # 组件消融: Cold Start数据量限制
+    test_data_path: Optional[str] = None,  # Transfer: 自定义测试数据集路径
 ):
     """
     运行完整三阶段流程（并发执行）
@@ -710,6 +773,7 @@ def run_full_pipeline(
     - Cold Start: 使用 self_evolve_skills_jailbreak/data/cold_start_prompts.json (默认 200 条)
     - Evolution: 使用 self_evolve_skills_jailbreak/data/evolution_prompts.json (默认 800 条)
     - Test: 使用 self_evolve_skills_jailbreak/data/test_prompts.json (默认 1000 条)
+            或通过 test_data_path 指定自定义测试数据集（Transfer实验）
 
     Args:
         max_workers: 轨迹级并发数（每个攻击轨迹并发运行）
@@ -717,6 +781,8 @@ def run_full_pipeline(
         cs_ratio: Layer 2 数据消融 - Cold Start 比例 (0.1-0.3)
         skill_source: Layer 3 - Skills来源 (default / dan_templates)
         skip_cold_start: Layer 3 - 跳过Cold Start阶段 (full_evove模式)
+        skip_evolution: 组件消融 - 跳过Evolution阶段 (只Cold Start)
+        test_data_path: Transfer实验 - 自定义测试数据集路径（跨数据集测试）
     """
     print("=" * 60)
     print("Self Evolve Skills for Jailbreak")
@@ -732,16 +798,26 @@ def run_full_pipeline(
         print(f"[Layer 3] skill_source: dan_templates (6个DAN模板)")
     if skip_cold_start:
         print(f"[Layer 3] skip_cold_start: True (full_evolve模式)")
+    if skip_evolution:
+        print(f"[组件消融] skip_evolution: True (只Cold Start)")
+        if cold_start_limit is not None:
+            print(f"[组件消融] cold_start_limit: {cold_start_limit}")
+    if test_data_path is not None:
+        print(f"[Transfer] test_data_path: {test_data_path} (跨数据集测试)")
 
     # 初始化 clients
     if not skip_launch:
         print("\n[Init] Launching LLM servers...")
-        guard_client, target_client = init_clients(config)
+        guard_client, attacker_client, target_client = init_clients(config, skip_launch=False)
     else:
         # 连接已运行的服务
-        from RL4jailbreak.src.vllm_client import VLLMClient
+        from src.vllm_client import VLLMClient
         guard_client = VLLMClient(
             port=config.GUARD_PORT,
+            launch_server=False,
+        )
+        attacker_client = VLLMClient(
+            port=config.ATTACKER_PORT,
             launch_server=False,
         )
         target_client = VLLMClient(
@@ -770,11 +846,23 @@ def run_full_pipeline(
         # 默认模式：使用预设的 cold_start 和 evolution 数据
         cold_start_prompts = load_data(config.COLD_START_DATA_PATH)
         evolution_prompts = load_data(config.EVOLUTION_DATA_PATH)
-        print(f"  Cold Start prompts: {len(cold_start_prompts)}")
+
+        # 组件消融：限制 cold_start 数据量
+        if cold_start_limit is not None and skip_evolution:
+            cold_start_prompts = cold_start_prompts[:cold_start_limit]
+            print(f"  Cold Start prompts: {len(cold_start_prompts)} (limited for ablation)")
+        else:
+            print(f"  Cold Start prompts: {len(cold_start_prompts)}")
+
         print(f"  Evolution prompts: {len(evolution_prompts)}")
 
-    test_prompts = load_data(config.TEST_DATA_PATH, limit=test_limit)
-    print(f"  Test prompts: {len(test_prompts)}")
+    # 加载测试数据（支持自定义路径）
+    if test_data_path is not None:
+        test_prompts = load_data(test_data_path, limit=test_limit)
+        print(f"  Test prompts: {len(test_prompts)} (from {test_data_path})")
+    else:
+        test_prompts = load_data(config.TEST_DATA_PATH, limit=test_limit)
+        print(f"  Test prompts: {len(test_prompts)}")
 
     # 中间评估数据（从 test_prompts 抽取一部分）
     eval_prompts = None
@@ -798,11 +886,39 @@ def run_full_pipeline(
 
     print(f"  Skills path: {skills_path}")
 
-    # 初始化 skill library（每个实验独立）
-    skill_library = SkillLibrary(
-        storage_path=skills_path,
-        max_skills=config.MAX_SKILLS,
-    )
+    # 初始化 skill library
+    # Transfer模式：skip_cold_start + skip_evolution，从已有库加载
+    if skip_cold_start and skip_evolution:
+        # 从 skill 文件加载（Transfer实验使用单个最佳skill）
+        source_path = config.SKILL_LIBRARY_PATH
+        print(f"\n[Transfer] Loading skill from: {source_path}")
+
+        # 检查源文件是否存在
+        if os.path.exists(source_path):
+            # 创建 skill library 并加载
+            skill_library = SkillLibrary(
+                storage_path=skills_path,
+                max_skills=config.MAX_SKILLS,
+            )
+            # 从源文件加载 skills
+            skill_library.load_from_file(source_path)
+            print(f"  Loaded {skill_library.count()} skills from {source_path}")
+            # 保存到实验目录
+            skill_library._save()
+            print(f"  Saved to {skills_path}")
+        else:
+            print(f"  [Warning] Source skills file not found: {source_path}")
+            print(f"  Using empty skill library")
+            skill_library = SkillLibrary(
+                storage_path=skills_path,
+                max_skills=config.MAX_SKILLS,
+            )
+    else:
+        # 正常实验模式：创建新的 skill library（或使用 DAN 模板）
+        skill_library = SkillLibrary(
+            storage_path=skills_path,
+            max_skills=config.MAX_SKILLS,
+        )
 
     # Layer 3: DAN模板初始化
     if skill_source == "dan_templates":
@@ -847,6 +963,7 @@ def run_full_pipeline(
     else:
         cold_start_stats = phase_cold_start(
             target_client=target_client,
+            attacker_client=attacker_client,
             guard_client=guard_client,
             seed_prompts=cold_start_prompts,
             skill_library=skill_library,
@@ -858,23 +975,39 @@ def run_full_pipeline(
         )
 
     # Phase 2: 进化
-    evolution_stats = phase_evolution(
-        target_client=target_client,
-        guard_client=guard_client,
-        seed_prompts=evolution_prompts,
-        skill_library=skill_library,
-        config=config,
-        skill_call_mode=skill_call_mode,
-        update_strategy=update_strategy,
-        num_epochs=num_epochs,
-        eval_prompts=eval_prompts,  # 中间评估
-        max_workers=max_workers,
-        verbose=verbose,
-    )
+    if skip_evolution:
+        print("\n[组件消融] 跳过Evolution阶段 (只Cold Start)")
+        evolution_stats = {
+            "epochs": 0,
+            "total_attempts": 0,
+            "success": 0,
+            "failure": 0,
+            "skills_added": 0,
+            "skills_deleted": 0,
+            "skills_merged": 0,
+            "final_skill_count": skill_library.count(),
+            "intermediate_evals": [],
+        }
+    else:
+        evolution_stats = phase_evolution(
+            target_client=target_client,
+            attacker_client=attacker_client,
+            guard_client=guard_client,
+            seed_prompts=evolution_prompts,
+            skill_library=skill_library,
+            config=config,
+            skill_call_mode=skill_call_mode,
+            update_strategy=update_strategy,
+            num_epochs=num_epochs,
+            eval_prompts=eval_prompts,  # 中间评估
+            max_workers=max_workers,
+            verbose=verbose,
+        )
 
     # Phase 3: 测试
     test_stats = phase_test(
         target_client=target_client,
+        attacker_client=attacker_client,
         guard_client=guard_client,
         test_prompts=test_prompts,
         skill_library=skill_library,
@@ -982,8 +1115,13 @@ def main():
 
     # 服务参数
     parser.add_argument("--skip_launch", action="store_true", help="跳过服务启动，连接已有服务")
-    parser.add_argument("--guard_port", type=int, default=8002, help="Guard 服务端口")
-    parser.add_argument("--target_port", type=int, default=8001, help="Target 服务端口")
+    parser.add_argument("--guard_port", type=int, default=8002, help="Guard 服务端口 (GPU 0)")
+    parser.add_argument("--attacker_port", type=int, default=8003, help="Attacker 服务端口 (GPU 1, 固定)")
+    parser.add_argument("--target_port", type=int, default=8001, help="Target 服务端口 (GPU 2+, 可变)")
+
+    # 模型路径参数
+    parser.add_argument("--target_model_path", type=str, default=None, help="Target 模型路径")
+    parser.add_argument("--target_model_name", type=str, default=None, help="Target 模型名称")
 
     # Skill 配置参数
     parser.add_argument("--skill_library_path", type=str, default="self_evolve_skills_jailbreak/skills/skills_library.json")
@@ -1002,12 +1140,21 @@ def main():
                         help="Skills来源: default(5个默认模板) / dan_templates(6个DAN模板)")
     parser.add_argument("--skip_cold_start", action="store_true",
                         help="跳过Cold Start阶段，直接进入Evolution (Layer 3 full_evove)")
+    parser.add_argument("--skip_evolution", action="store_true",
+                        help="跳过Evolution阶段，只做Cold Start (组件消融)")
+    parser.add_argument("--cold_start_limit", type=int, default=None,
+                        help="Cold Start数据量限制（组件消融，配合skip_evolution使用）")
+
+    # Transfer 实验参数
+    parser.add_argument("--test_data_path", type=str, default=None,
+                        help="测试数据集路径（Transfer实验：跨数据集测试）")
 
     args = parser.parse_args()
 
     # 配置
     config = ExperimentConfig(
         GUARD_PORT=args.guard_port,
+        ATTACKER_PORT=args.attacker_port,
         TARGET_PORT=args.target_port,
         MAX_ITERATIONS=args.max_iterations,
         MAX_WORKERS=args.max_workers,
@@ -1019,6 +1166,12 @@ def main():
         MIN_USAGE=args.min_usage,
         MAINTENANCE_INTERVAL=args.maintenance_interval,
     )
+
+    # 如果指定了 target_model，更新配置
+    if args.target_model_path:
+        config.TARGET_MODEL_PATH = args.target_model_path
+    if args.target_model_name:
+        config.TARGET_MODEL_NAME = args.target_model_name
 
     # 运行
     run_full_pipeline(
@@ -1037,6 +1190,9 @@ def main():
         cs_ratio=args.cs_ratio,
         skill_source=args.skill_source,
         skip_cold_start=args.skip_cold_start,
+        skip_evolution=args.skip_evolution,
+        cold_start_limit=args.cold_start_limit,
+        test_data_path=args.test_data_path,
     )
 
 

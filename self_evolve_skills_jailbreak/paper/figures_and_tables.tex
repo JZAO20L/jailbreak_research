@@ -1,0 +1,213 @@
+% ============================================================
+% SESS 论文图表清单
+% 按正文出现顺序排列，含 LaTeX 引用和注释
+% ============================================================
+
+% ============================================================
+% FIGURE 1: 系统框架图
+% ============================================================
+% 文件: figures/SESS.drawio.png (或 .pdf)
+% 位置: §3 Method, 紧接 3.1 Overview 之后
+% 引用: \begin{figure}[t] \includegraphics[width=\linewidth]{figures/SESS.drawio} \caption{...} \label{fig:system} \end{figure}
+%
+% 内容说明:
+%   SESS 系统三阶段流程图: Cold Start → Self-Evolution → Deployment
+%   核心组件: Skill Library (居中), Retrieval, Attack, Reflection, Maintenance
+%   标注跨模型迁移箭头
+%
+% Caption 建议:
+%   "Overview of SESS. The framework maintains a dynamic skill library that evolves
+%    through three phases. During cold start, initial skills are accumulated from base
+%    attack trajectories or strong prior templates (e.g., DAN). During self-evolution,
+%    skills are retrieved via multi-factor scoring to guide attacks, and new skills are
+%    extracted or existing ones refined based on outcomes. The library is periodically
+%    maintained through quality pruning, similarity-based merging, and capacity control.
+%    Evolved skills can be directly transferred to other models."
+%
+% 注意: 此图从 SESS.drawio 导出，源文件在 figures/SESS.drawio
+%       建议导出为 PDF 矢量图用于论文
+
+% ============================================================
+% TABLE 1: SESS 对 PAIR 和 AutoDAN 的提升（同模型评估）
+% ============================================================
+% 文件: tables/table1_main_results.tex
+% 位置: §4.2 策略组合实验之后，§4.3 迁移实验之前
+% 引用: \input{tables/table1_main_results}
+%
+% 内容说明:
+%   展示 SESS 对两个 baseline 方法的提升幅度
+%   PAIR: 55.5% → 79.0% (+23.5pp)
+%   AutoDAN: 86.8% → 100.0% (+13.2pp)
+%   标注 AutoDAN+SESS 使用 DAN 模板作为结构先验
+%
+% Caption 建议:
+%   "SESS improves both PAIR and AutoDAN on Qwen3-4B (WildJailbreak test set).
+%    AutoDAN+SESS uses DAN templates as structural prior skills."
+
+% ============================================================
+% FIGURE 2: 主实验结果图（多模型×多数据集分组柱状图）
+% ============================================================
+% 文件: figures/main_experiment_results.png
+% 位置: §4.3 迁移实验开头，作为主要实验结果可视化
+% 引用: \begin{figure}[t] \includegraphics[width=\linewidth]{figures/main_experiment_results} \caption{...} \label{fig:main_results} \end{figure}
+%
+% 内容说明:
+%   2×2 子图布局，4 个目标模型 × 5 个数据集 × 4 种方法
+%   每个子图展示一个模型在 5 个数据集上的表现
+%   蓝色系配色（与 SESS_04 风格一致）
+%   图例位于 GPT-OSS-20B 子图右上角
+%   清晰展示: (1) SESS 对 PAIR/AutoDAN 的提升; (2) 跨模型迁移效果; (3) 跨族模型差异
+%
+% Caption 建议:
+%   "Main experiment results across 4 target models and 5 datasets. SESS skills are
+%    trained on Qwen3-4B + WildJailbreak and directly transferred. Top row: same-family
+%    models (Qwen3-0.6B, Qwen3-4B). Bottom row: Qwen3-14B (same family) and GPT-OSS-20B
+%    (cross-family). SESS consistently improves over baselines. Structure prior (DAN
+%    templates) is crucial for cross-family transfer: AutoDAN+SESS achieves 28--39\%
+%    on GPT-OSS-20B vs. PAIR+SESS 8--13\%."
+
+% ============================================================
+% TABLE 2: 跨模型迁移效果（default 数据集）
+% ============================================================
+% 文件: tables/table2_transfer_models.tex
+% 位置: Figure 2 之后，补充精确数据
+% 引用: \input{tables/table2_transfer_models}
+%
+% 内容说明:
+%   4 个目标模型 × 7 种方法（含 baseline 和 SESS 变体）
+%   标注同族/跨族，标注结构先验的作用
+%
+% Caption 建议:
+%   "Cross-model transfer on default dataset. SESS skills trained on Qwen3-4B.
+%    Structure prior (DAN templates) significantly improves cross-family transfer:
+%    AutoDAN+SESS 30.0\% vs. PAIR+SESS 12.9\% on GPT-OSS-20B."
+
+% ============================================================
+% TABLE 3: 跨数据集迁移效果（Qwen3-4B）
+% ============================================================
+% 文件: tables/table3_transfer_datasets.tex
+% 位置: Table 2 之后
+% 引用: \input{tables/table3_transfer_datasets}
+%
+% 内容说明:
+%   Qwen3-4B 上 5 个数据集 × 4 种方法（PAIR/AutoDAN 及其 SESS 版本）
+%   展示 skills 的跨数据集泛化能力
+%   AutoDAN+SESS 全部达到 100%
+%
+% Caption 建议:
+%   "Cross-dataset transfer on Qwen3-4B. SESS skills trained on WildJailbreak (default)
+%    generalize to all 5 benchmark datasets. AutoDAN+SESS achieves 100\% across all datasets."
+
+% ============================================================
+% TABLE 4: 消融实验
+% ============================================================
+% 文件: tables/table4_ablation.tex
+% 位置: §4.4 消融实验
+% 引用: \input{tables/table4_ablation}
+%
+% 内容说明:
+%   逐步添加 SESS 组件，量化每个组件的作用
+%   包含: baseline → 仅 Cold Start → +Evolution → 完整 SESS
+%   区分 PAIR+SESS（纯自进化）和 AutoDAN+SESS（DAN 结构先验）
+%   展示强先验下 Evolution 贡献有限（+0.9pp）
+%
+% Caption 建议:
+%   "Ablation study: contribution of each SESS component (Qwen3-4B, WildJailbreak).
+%    SESS significantly improves both PAIR (+23.5pp) and AutoDAN (+13.2pp).
+%    Structure prior (DAN templates) is the key differentiator: AutoDAN+SESS reaches
+%    100.0\% vs. PAIR+SESS 79.0\%. Evolution contributes +0.9pp under strong prior."
+
+% ============================================================
+% FIGURE 3 (可选): 跨族迁移对比图
+% ============================================================
+% 文件: figures/SESS_04_cross_model_transfer.png
+% 位置: §4.3.3 跨族迁移分析（如需要单独强调跨族结果）
+% 引用: \begin{figure}[t] \includegraphics[width=\linewidth]{figures/SESS_04_cross_model_transfer} \caption{...} \label{fig:cross_family} \end{figure}
+%
+% 内容说明:
+%   蓝色系分组柱状图，展示 4 模型 × 4 方法
+%   虚线分隔同族/跨族
+%   风格与 Figure 2 一致
+%
+% 注意: 如果 Figure 2 已充分展示跨族结果，此图可省略或移至附录
+%       此图的优势是更简洁，仅展示 default 数据集的对比
+%
+% Caption 建议:
+%   "Cross-model transfer on default dataset. Same-family models (Qwen3-0.6B/4B/14B)
+%    achieve 85--100\% ASR with SESS. Cross-family (GPT-OSS-20B) remains challenging
+%    but AutoDAN+SESS (32.5\%) significantly outperforms PAIR+SESS (11.4\%)."
+
+% ============================================================
+% 附录图表
+% ============================================================
+
+% TABLE A1: 完整跨模型×跨数据集实验结果
+% 文件: tables/tableA1_full_results.tex
+% 位置: Appendix A
+% 引用: \input{tables/tableA1_full_results}
+%
+% 内容说明:
+%   4 模型 × 5 数据集 × 7 方法 = 140 个数据点的完整矩阵
+%   包含汇总统计表（5 数据集平均 ASR）
+%   这是论文最完整的实验数据展示
+%
+% Caption 建议:
+%   "Complete cross-model × cross-dataset results. SESS skills trained on Qwen3-4B +
+%    WildJailbreak. PAIR+SESS: pure self-evolution skills (no structure prior).
+%    AutoDAN+SESS: DAN templates as structure prior seeds."
+
+% FIGURE A1: 热力图（完整数据矩阵可视化）
+% 文件: figures/main_figure_cross_model_dataset.png
+% 位置: Appendix A，Table A1 之后
+% 引用: \begin{figure}[h] \includegraphics[width=\linewidth]{figures/main_figure_cross_model_dataset} \caption{...} \label{fig:heatmap} \end{figure}
+%
+% 内容说明:
+%   2×2 子图热力图，4 模型 × 5 数据集 × 7 方法
+%   颜色编码: 红(低 ASR) → 黄 → 绿(高 ASR)
+%   同族模型背景淡绿，跨族模型背景淡红
+%   作为 Table A1 的可视化补充
+%
+% Caption 建议:
+%   "Heatmap visualization of complete experimental results (corresponding to Table A1).
+%    Color scale: red (low ASR) to green (high ASR). Same-family models (top row and
+%    Qwen3-14B) show consistently high ASR with SESS. Cross-family model GPT-OSS-20B
+%    (bottom right) shows the importance of structure prior."
+
+% FIGURE A2: 跨模型迁移汇总柱状图
+% 文件: figures/summary_figure_cross_model.png
+% 位置: Appendix A
+% 引用: \begin{figure}[h] \includegraphics[width=0.8\linewidth]{figures/summary_figure_cross_model} \caption{...} \label{fig:summary_transfer} \end{figure}
+%
+% 内容说明:
+%   4 模型 × 4 方法分组柱状图（5 数据集平均 ASR）
+%   红色虚线分隔同族/跨族
+%   简洁展示跨模型迁移的整体趋势
+
+% ============================================================
+% 未使用的图表（可删除或保留备用）
+% ============================================================
+%
+% figures/main_bar_chart.png/pdf — 与 SESS_04 重复，可删除
+% tables/layer1_ablation.tex — Layer 1 详细消融数据，如正文不需要可删
+% tables/layer2_data.tex — Layer 2 数据策略消融，如正文不需要可删
+% tables/layer3_dan.tex — Layer 3 DAN 模板详细数据，如正文不需要可删
+% tables/transfer_models.tex — 与 table2 内容重叠，保留 table2
+% tables/transfer_datasets.tex — 与 table3 内容重叠，保留 table3
+% tables/evolution_ablation.tex — 与 table4 内容重叠，保留 table4
+
+% ============================================================
+% 正文图表使用顺序总结
+% ============================================================
+%
+% Figure 1: SESS.drawio.png        → §3 Method (系统框架)
+% Table 1:  table1_main_results.tex → §4.2 (SESS 对 baseline 的提升)
+% Figure 2: main_experiment_results.png → §4.3 (主实验结果: 多模型×多数据集)
+% Table 2:  table2_transfer_models.tex → §4.3 (跨模型迁移精确数据)
+% Table 3:  table3_transfer_datasets.tex → §4.3 (跨数据集迁移)
+% Table 4:  table4_ablation.tex → §4.4 (消融实验)
+% [可选] Figure 3: SESS_04_cross_model_transfer.png → §4.3.3 (跨族迁移)
+%
+% Appendix:
+% Table A1:  tableA1_full_results.tex → 完整结果矩阵
+% Figure A1: main_figure_cross_model_dataset.png → 热力图
+% Figure A2: summary_figure_cross_model.png → 汇总柱状图
