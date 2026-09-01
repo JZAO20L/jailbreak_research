@@ -129,3 +129,52 @@ s2_eval*.log
 # ========================================
 # Git doesn't track empty directories, so we keep .gitkeep files
 models/.gitkeep
+
+# ========================================
+# self_evolve_skills_jailbreak Experiment Results
+# ========================================
+# Experiment results directories
+self_evolve_skills_jailbreak/exp/*/results/
+self_evolve_skills_jailbreak/exp/results/
+self_evolve_skills_jailbreak/exp/*/logs/
+
+# Generated skill libraries (experiment outputs)
+self_evolve_skills_jailbreak/skills/skills_library.json
+self_evolve_skills_jailbreak/skills/skills_single_call_final_prompt_*.json
+
+# Generated data files
+self_evolve_skills_jailbreak/data/cold_start_prompts.json
+self_evolve_skills_jailbreak/data/evolution_prompts.json
+self_evolve_skills_jailbreak/data/test_prompts.json
+self_evolve_skills_jailbreak/data/train_prompts.json
+self_evolve_skills_jailbreak/data/data_meta.json
+
+# Experiment progress files
+self_evolve_skills_jailbreak/exp/*/layer*_progress_*.md
+# ========================================
+# Ch3 agentic_jailbreak heavy artifacts (model weights / trajectory dumps)
+# ========================================
+agentic_jailbreak/output/
+agentic_jailbreak/exp/beam_pilot/
+agentic_jailbreak/exp/results/sess_on_saferl/
+agentic_jailbreak/exp/results/sess_saferl_top10/
+agentic_jailbreak/exp/skill_asr_sweep/results.jsonl
+**/*.safetensors
+
+# Baseline experiment raw dumps (keep README/summary)
+baselines/experiments/**/results.jsonl
+
+# SESS large result jsons (keep summary md/html)
+self_evolve_skills_jailbreak/exp/layer3/results_0/
+self_evolve_skills_jailbreak/exp/layer3/results_core/*.json
+self_evolve_skills_jailbreak/exp/layer3/results_core/*.html
+self_evolve_skills_jailbreak/exp/data_generate/results/
+self_evolve_skills_jailbreak/exp/data_generate/logs/
+
+# Rewrite generator data dumps
+jailbreak_rewrite_prompt_generator/data/
+
+# IDE
+.qoder/
+jailbreak_rewrite_prompt_generator/data/
+jailbreak_rewrite_prompt_generator/exp/
