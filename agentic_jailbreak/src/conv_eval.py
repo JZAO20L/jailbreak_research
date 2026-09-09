@@ -192,7 +192,7 @@ class ConversationalAgent:
 
     def _init_client(self):
         if self.policy_client is None:
-            self.policy_client = VLLMClient(port=self.policy_port, launch_server=False, timeout=60)
+            self.policy_client = VLLMClient(port=self.policy_port, launch_server=False, timeout=1000)
             self.policy_client.__enter__()
 
     def act(self, messages: List[Dict]) -> List[str]:
@@ -261,6 +261,14 @@ def build_work_memory_feedback(work_memory, evals: List[Dict], turn: int) -> str
     return work_memory.render()
 
 
+def _ctx_view(messages: List[Dict], window: int) -> List[Dict]:
+    """C3 滑动窗口上下文: 保留 system+初始 user 头部, 尾部只留最近 window 轮
+    (每轮 = assistant 动作 + user 反馈 2 条消息)。0/负值 = 关闭(全量累积, C1)。"""
+    if window <= 0 or len(messages) <= 2:
+        return messages
+    return messages[:2] + messages[2:][-(2 * window):]
+
+
 def evaluate_conversational(
     prompt: str,
     env,
@@ -268,6 +276,7 @@ def evaluate_conversational(
     variant: str,
     memory=None,
     work_memory=None,
+    ctx_window: int = 0,
 ) -> Dict[str, Any]:
     """对话式多轮评估单个 prompt。"""
     env.reset(prompt)  # 绑定该 prompt 的候选 skills(target/guard clients 复用)
@@ -282,7 +291,8 @@ def evaluate_conversational(
 
     for turn in range(env.max_turns):
         total_turns = turn + 1
-        action_texts = agent.act(messages)
+        # C3: 只把滑动窗口视图喂给 policy, 完整 messages 仍用于反馈追加
+        action_texts = agent.act(_ctx_view(messages, ctx_window))
         actions = []
         for t in action_texts:
             if variant == "skill_once" and turn > 0:
@@ -290,7 +300,8 @@ def evaluate_conversational(
                 idx, content = 0, t.strip()
             else:
                 idx, content = parse_action_text(t, variant, len(env.state.skill_library))
-            actions.append({"skill_idx": idx, "adapted_content": content})
+            # raw = 模型原始输出(含 Selection/Adapted Strategy 标记), 供 RFT 全轨迹样本逐字监督
+            actions.append({"skill_idx": idx, "adapted_content": content, "raw": t.strip()})
 
         # 执行攻击(单候选直接评估;beam 评估全部)
         evals = []
@@ -341,13 +352,15 @@ def run_conversational_eval(args, test_data, env, output_dir):
     agent = ConversationalAgent(policy_port=args.policy_port, beam_width=beam_width)
 
     use_work_memory = getattr(args, "work_memory", False)
+    ctx_window = int(getattr(args, "ctx_window", 0) or 0)
 
     results = []
     success_count = 0
     for item in tqdm(test_data, desc="Conv-Evaluating"):
         # 工作记忆按样本隔离:每个 episode 独立,避免跨样本污染
         wm = WorkingMemory(summarizer_port=args.policy_port) if use_work_memory else None
-        r = evaluate_conversational(item["prompt"], env, agent, args.variant, work_memory=wm)
+        r = evaluate_conversational(item["prompt"], env, agent, args.variant,
+                                    work_memory=wm, ctx_window=ctx_window)
         if wm is not None:
             wm.close()
         if r["success"]:
@@ -366,6 +379,7 @@ def run_conversational_eval(args, test_data, env, output_dir):
         "variant": args.variant,
         "mode": "conversational",
         "work_memory": use_work_memory,
+        "ctx_window": ctx_window,
         "top_k_skills": getattr(args, "top_k_skills", None),
     }
     results_path = output_dir / "results.jsonl"

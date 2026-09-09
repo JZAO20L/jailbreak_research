@@ -23,7 +23,7 @@ GYMScheduler 把 reset 返回的 obs 作为首条 user message,step 返回的 ne
         --dataset <grpo_data.jsonl>   # 每行含 "prompt" 字段
         ...
 env_config 支持(via 数据集行 env_config 字段或默认):
-    variant: "no_skill"(默认,自由生成)/ "no_skill_beam" / "select_adapt"
+    variant: "skill_decide"(默认, LLM 自选 skill 或自由改写)/ "no_skill" / "select_adapt"
     beam_width: 2
 """
 
@@ -35,6 +35,14 @@ from typing import Tuple, Dict, Any, List
 PROJECT_ROOT = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 sys.path.insert(0, str(PROJECT_ROOT / "RL4jailbreak"))
+
+# V100 (SM7.0) SDPA math 回退 OOM 修复: 重定向到 xformers mem-efficient。
+# 必须在 transformers 被实际使用前生效 (详见 src/v100_attn_patch.py)。
+import importlib.util as _ilu
+_spec = _ilu.spec_from_file_location(
+    "v100_attn_patch", Path(__file__).parent / "v100_attn_patch.py")
+_mod = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_mod)
 
 from swift.rollout.gym_env import Env, envs
 
@@ -54,12 +62,14 @@ SYSTEM_PROMPT = (
 ROLLOUT_DEFAULT_PORT = 8003
 
 DEFAULT_ENV_CONFIG = {
-    "skills_path": "/home/tiger/jailbreak_research/agentic_jailbreak/data/skills.json",
+    # 2026-09-02 口径定稿: PAIR 骨架 + 10-skill 精选库, LLM 自选(skill_decide)
+    # 训练/评估/RFT 采集统一此协议; exp04 (M1/M3) 与 swift rollout 侧均用本默认值
+    "skills_path": "/home/tiger/jailbreak_research/agentic_jailbreak/exp/skill_asr_sweep/seed_skills_top10.json",
     "target_port": 8002,
     "guard_port": 8001,
-    "max_turns": 5,
-    "top_k_skills": 5,
-    "variant": "no_skill",
+    "max_turns": 10,
+    "top_k_skills": 10,
+    "variant": "skill_decide",
     "beam_width": 2,
     "use_work_memory": False,
     "summarizer_port": 8003,

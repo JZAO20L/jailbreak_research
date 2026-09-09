@@ -17,6 +17,9 @@ source "$(dirname "$0")/common.sh"
 
 EPOCHS="${EPOCHS:-2}"
 MAX_TURNS="${MAX_TURNS:-10}"
+# 6144: 82 条样本 max 5448 token(实测 09-04); 4096 会截断 2 条长轨迹
+# batch 1 + 梯度累积 8 + 梯度检查点: batch 2 @6144 在 V100-32GB OOM(09-05)
+MAX_LENGTH="${MAX_LENGTH:-6144}"
 DATA="${DATA:-$OUTPUT_DIR/rft_data_conv_${MAX_TURNS}turn.jsonl}"
 EXP_DIR="$OUTPUT_DIR/rft_sft_conv${MAX_TURNS}turn_e${EPOCHS}"
 TRAIN_GPU="${TRAIN_GPU:-3}"
@@ -33,11 +36,12 @@ CUDA_VISIBLE_DEVICES=$TRAIN_GPU swift sft \
     --model "$BASE_MODEL" \
     --dataset "$DATA" \
     --tuner_type lora \
-    --max_length 4096 \
+    --max_length $MAX_LENGTH \
     --num_train_epochs $EPOCHS \
     --learning_rate 1e-5 \
-    --per_device_train_batch_size 2 \
-    --gradient_accumulation_steps 4 \
+    --per_device_train_batch_size 1 \
+    --gradient_accumulation_steps 8 \
+    --gradient_checkpointing true \
     --fp16 true \
     --bf16 false \
     --save_strategy epoch \

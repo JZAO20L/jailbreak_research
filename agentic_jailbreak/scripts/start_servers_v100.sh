@@ -34,7 +34,7 @@ log_info "target: GPU1 port 8002"
 wait_for_server 8002 "Target" 1500
 
 CUDA_VISIBLE_DEVICES=2 "$VLLM_BIN" serve "$BASE_MODEL" \
-    --port 8003 --max-model-len 16384 --gpu-memory-utilization 0.9 \
+    --port 8003 --max-model-len 24576 --gpu-memory-utilization 0.9 \
     --dtype float16 --trust-remote-code \
     > "$LOG_DIR/policy_v100.log" 2>&1 &
 log_info "policy: GPU2 port 8003"

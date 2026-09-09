@@ -57,7 +57,7 @@ class Agent:
             self.policy_client = VLLMClient(
                 port=self.policy_port,
                 launch_server=False,
-                timeout=60,
+                timeout=1000,
             )
             self.policy_client.__enter__()
     

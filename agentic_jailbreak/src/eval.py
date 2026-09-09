@@ -46,6 +46,8 @@ def parse_args():
     parser.add_argument("--top_k_skills", type=int, default=5, help="Number of skill candidates (e.g., 1 or 3)")
     parser.add_argument("--work_memory", action="store_true",
                         help="Use hierarchical working memory (previous-turn summaries + last-turn full feedback)")
+    parser.add_argument("--ctx_window", type=int, default=0,
+                        help="C3 sliding-window context: keep system+initial user + last N turns (0 = full accumulation, C1)")
     parser.add_argument("--beam_width", type=int, default=2, help="Beam width (variant=beam)")
     parser.add_argument("--mode", type=str, default="conversational",
                         choices=["stateless", "conversational"],

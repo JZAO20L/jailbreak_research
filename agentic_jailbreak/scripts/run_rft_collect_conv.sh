@@ -4,8 +4,13 @@
 #
 # 流程:
 #   1) split A 种子 (train[1000:2000], rft_seed_train1000.json) -> jsonl 转换
-#   2) base 模型 + conv_eval (no_skill, 单轨迹, max_turns=10) 全量采集
-#   3) build_rft_data_conv.py 前缀式展开 -> SFT jsonl
+#   2) base 模型 + conv_eval (skill_decide, 单轨迹, max_turns=10) 全量采集
+#   3) build_rft_data_conv.py 全轨迹样本 -> SFT jsonl
+#
+# 2026-09-02 口径定稿: PAIR 骨架 + 10-skill 精选库, LLM 自选 (skill_decide)
+#   - variant=skill_decide: 每轮 LLM 自决 —— 输出 Selection: Skill [i] + Adapted Strategy
+#     则用 skill 适配, 否则自由改写攻击 prompt (PAIR 式)
+#   - skills = seed_skills_top10 (54 库按实测单调用 ASR 筛选的 top-10)
 #
 # 数据隔离 (保持不变): A(本脚本采集 RFT) / B(GRPO 训练 train[0:1000]) / C(test 评估)
 #
@@ -17,6 +22,9 @@ set -e
 source "$(dirname "$0")/common.sh"
 
 MAX_TURNS="${MAX_TURNS:-10}"
+VARIANT="${VARIANT:-skill_decide}"
+SKILLS_TOP10="$AGENTIC_DIR/exp/skill_asr_sweep/seed_skills_top10.json"
+TOP_K_SKILLS="${TOP_K_SKILLS:-10}"
 SEED_JSON="${SEED_JSON:-$OUTPUT_DIR/rft_seed_train1000.json}"
 COLLECT_DIR="$OUTPUT_DIR/rft_collect_conv_${MAX_TURNS}turn"
 RFT_DATA="$OUTPUT_DIR/rft_data_conv_${MAX_TURNS}turn.jsonl"
@@ -48,11 +56,12 @@ done
 SLICE_DIR="$OUTPUT_DIR/slices/rft_collect_${MAX_TURNS}turn"
 mkdir -p "$SLICE_DIR" "$COLLECT_DIR"
 $PYTHON_BIN - "$SEED_JSONL" "$SLICE_DIR" << 'EOF'
-import json, sys
+import json, os, sys
 from pathlib import Path
 lines = [l for l in open(sys.argv[1]) if l.strip()]
 n = len(lines)
-workers = 4
+# 并发数可调: vLLM 服务端批处理需要足够并发才能吃满吞吐 (4 路实测 ~400s/条, 12 路预期 2-3x)
+workers = int(os.environ.get("COLLECT_WORKERS", "12"))
 size = max(1, n // workers)
 for i in range(workers):
     chunk = lines[i*size:(i+1)*size] if i < workers-1 else lines[i*size:]
@@ -64,10 +73,10 @@ PIDS=()
 for part in "$SLICE_DIR"/part*.jsonl; do
     name=$(basename "$part" .jsonl)
     $PYTHON_BIN "$AGENTIC_DIR/src/eval.py" \
-        --test_data "$part" --skills_path "$SKILLS_PATH" \
+        --test_data "$part" --skills_path "$SKILLS_TOP10" \
         --policy_port $ROLLOUT_PORT --target_port $TARGET_PORT --guard_port $GUARD_PORT \
         --max_turns $MAX_TURNS --max_samples 1000 \
-        --variant no_skill --mode conversational \
+        --variant $VARIANT --top_k_skills $TOP_K_SKILLS --mode conversational \
         --output_dir "$COLLECT_DIR/$name" \
         > "$OUTPUT_DIR/logs/rft_collect_conv_${name}.log" 2>&1 &
     PIDS+=($!)
@@ -95,10 +104,11 @@ json.dump({"total": total, "success": success, "asr": asr, "mode": "rft_collect_
 print(f"[rft_collect] base@采集 ASR={asr:.2%} ({success}/{total})")
 EOF
 
-# --- 5. 前缀式展开 -> SFT 数据 ---
+# --- 5. 全轨迹样本 -> SFT 数据 ---
 log_section "构建 SFT 数据"
 $PYTHON_BIN "$AGENTIC_DIR/scripts/build_rft_data_conv.py" \
-    --results "$COLLECT_DIR/results.jsonl" --out "$RFT_DATA"
+    --results "$COLLECT_DIR/results.jsonl" --out "$RFT_DATA" \
+    --variant "$VARIANT" --skills-path "$SKILLS_TOP10" --top-k-skills "$TOP_K_SKILLS"
 
 log_section "RFT conv 采集完成"
 log_info "采集结果: $COLLECT_DIR"

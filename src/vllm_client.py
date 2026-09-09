@@ -84,7 +84,7 @@ class VLLMClient:
         model_path: Optional[str] = None,  # 可选：连接已运行服务时不需要
         port: int = 8000,
         temperature: float = 0.7,
-        timeout: float = 120.0,
+        timeout: float = 1000.0,
         launch_server: bool = False,
         gpu_id: str = "0",
         # ===== vLLM server 核心参数 =====

@@ -135,15 +135,15 @@ class JailbreakEnv:
             self.target_client = VLLMClient(
                 port=self.target_port,
                 launch_server=False,
-                timeout=60,
+                timeout=1000,
             )
             self.target_client.__enter__()
-        
+
         if self.guard_client is None:
             self.guard_client = VLLMClient(
                 port=self.guard_port,
                 launch_server=False,
-                timeout=60,
+                timeout=1000,
             )
             self.guard_client.__enter__()
     

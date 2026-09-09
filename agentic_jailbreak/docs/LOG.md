@@ -254,3 +254,38 @@
 - **RFT v3 代码落地**(conv 协议原生,替代 beam 来源的 v2):`run_rft_collect_conv.sh`(split A 采集)→ `build_rft_data_conv.py`(全轨迹样本)→ `rft_sft_conv.sh`(1-2 epochs);合成 fixture 离线验证通过
 - **swift loss 语义发现**:default loss_scale 对多轮 messages 的所有 assistant 轮算 loss → 全轨迹样本每动作监督一次(正确);v2 前缀式展开会把早期动作重复监督 T-i+1 次(过加权),记录为 v2 负结果的候选贡献因素
 - 当前环境无 GPU(待用户切换环境继续),M0-M3 全部待跑
+
+## 2026-09-02 — 方法口径定稿:PAIR+10-skill(LLM 自选) + RFT 采集重启
+
+- **方法定稿(用户决策,覆盖此前 no_skill 主配置)**:agent 核心 = **PAIR 骨架 + Skills,LLM 自选**(`skill_decide`),与 SESS 一脉相承;后续核心实验(矩阵 M0-M3/RFT/评估)统一使用 **10-skill 精选库** `exp/skill_asr_sweep/seed_skills_top10.json`
+- 代码切换:① `plugin.py` DEFAULT_ENV_CONFIG → skill_decide/top10/top_k=10/max_turns=10(⚠️ 顺带修复隐患:原默认 max_turns=5,exp04@10 轮若不传 env_config 会静默跑 5 轮);② `conv_eval.py` 轨迹落盘新增 `actions[].raw`(模型原始输出含 Selection 标记)——RFT 监督目标必须是原始动作文本,否则 skill_decide 的选择标记学不到,协议漂移;③ `build_rft_data_conv.py` 支持 --variant/--skills-path(复刻 env 质量池排序,与 env 候选顺序逐项核对一致);④ `run_rft_collect_conv.sh` 切 skill_decide 协议
+- **no_skill 协议 RFT 采集中止**(16:59 启动,按新口径协议不符,用户确认杀掉重采);skill_decide@10skills 版本重新全量采集(split A, 4 并行, ~3-5h)
+- 风险记录:A1 消融中 skill_decide@54库 = 19% < no_skill 23.2%(负资产);精选 10-skill 消除"候选不对齐"根因,预期反转为正,待采集 ASR 与 M0/M1 对比验证
+- 三服务 8001/8002/8003 健康
+
+## 2026-09-03 — 采集并发事故与修复(深夜自动恢复)
+
+- 12 路并发采集至 ~9h 时 4/12 part(0/1/8/11)崩溃:`openai.APITimeoutError`——根因 = client 超时硬编码 60s(conv_eval.py:195 policy / env.py:138,146 target+guard),12 路争抢下单请求超 60s;结果仅结束时落盘 → 4 part 全损(332 条需重跑)
+- 修复:① client 超时统一 1000s(conv_eval.py / env.py / agent.py 显式调用点 + src/vllm_client.py 默认值 120→1000;working_memory 保持 30s——summarizer 侧调本就有规则式回退,短超时是有意设计);② 采集脚本 workers 可调(COLLECT_WORKERS,默认 12);③ `recover_rft_collect_20260903.sh` 全自动恢复:等 8 路存活退出 → 4 崩溃 part 重切 12 子任务补采 → 合并(assert 总数=1000)→ 构建 SFT 数据
+- 经验:多路并发采集必须先核对 client 超时与预期单请求延迟(10 轮×thinking 生成下单请求可远超 60s);results 建议增量落盘防全损
+- 预期:存活 8 part ~06:00 完,补采 ~09:30 完,SFT 数据上午产出
+
+## 2026-09-08 — M1 启动 OOM 三连排障（V100 10轮GRPO 显存治理）
+
+- **根因 1 (batch×attention)**: 10 轮轨迹训练 seq 最长 ~18.8k，SDPA attention 显存 O(seq²)：per_device 2 首步 OOM 55.56GiB → per_device 1 + grad_accum 8（有效 batch 不变）+ gradient_checkpointing
+- **根因 2 (全词表 logits 物化)**: completion 段 ~15k token × 152k vocab，liger 前进程 29GB→10.7GB 证实。`pip install liger-kernel`(0.8.2) + `--use_liger_kernel true`，LigerFusedLinearGRPOLoss fused linear+CE 不物化 logits。swift 自带分块路径 `dynamic_num_samples` 仅 per-turn 切分触发，单轨迹协议用不上
+- **根因 3 (SDPA math 回退)**: V100 SM7.0 上 PyTorch SDPA 的 flash(SM80+)/mem-efficient(SM75+) 全不可用 → math 后端完整物化 [B,H,M,M]（18.8k×32 heads ≈ 21GB/条）。修复 = `src/v100_attn_patch.py`（经 plugin.py 加载）重定向到 xformers mem-efficient（cutlass fmha 原生支持 SM70，显存 O(seq)）
+  - ⚠️ 踩坑 1: 只替换 `sdpa_attention` 模块属性不够——modeling_qwen3 运行时经 `ALL_ATTENTION_FUNCTIONS['sdpa']` 注册表分发，必须同时替换注册表项
+  - ⚠️ 踩坑 2: bias 必须 stride-0 `expand` 到 head 维（xformers 0.0.35 要求精确同形），不能 materialize
+  - ⚠️ 踩坑 3: trainer 的 no_grad old/ref logps pass 按 config dtype 走 **bf16**（`--fp16 true` 的 autocast 只覆盖 compute_loss），cutlass 拒绝 bf16 → patch 内透明转 fp16 计算再转回
+  - ⚠️ 踩坑 4: repo 预装 xformers 0.0.28 系 torch 2.5 编译，torch 2.10 下 CUDA 扩展不加载 → `pip install --no-deps xformers==0.0.35`
+  - patch 离线验证: fp16/bf16 × causal/4D-mask 全部误差 ≤ bf16 舍入级（0/0.0156），梯度回传正常，stride-0 bias 峰值 47MB
+- 实验协议零改动: 10 轮 / num_generations=16 / β=0.05 / 300 步 / loss_type=grpo 原样
+- 经验: 每轮 OOM 先看 traceback 落点（attention vs logits）+ 申请显存大小反推张量形状，不要凭直觉连续调参
+
+## 2026-09-08 — M1 第 5 次启动成功 + 架构/方案讨论
+
+- 21:10 step 6/300 稳定(GPU3 18.4GB vs 修复前 26.6GB+16GB 峰值), 四卡: GPU0 guard 8001 / GPU1 target 8002 / GPU2 swift rollout 8004(24.5k ctx) / GPU3 trainer(LoRA+liger+xformers patch)
+- 并发结构核实: 训练 rollout = 16 路并发×10 轮串行/条, vLLM 服务端 max_num_seqs=256(默认) 远未打满; GPU0/1 的 0%↔100% 尖峰是轨迹内三服务串行接力的流水线气泡, 非排队。瓶颈=轨迹内串行, 单纯加训练卡收益有限; 加卡应加 target/guard 副本
+- 方案讨论(详见 TODO.md 09-08 节): ①降 num_generations→否决(零组概率翻倍) ②换 plain 4B target→暂缓(科学性+一周重做成本, 替代=C轴/DAPO/plain4B 仅作评估 transfer) ③SESS desk reject 后第三章定位讨论(方案 A/B 未定)
+- 决策检查点: M1 前 10-20 步 frac_reward_zero_std 实测值出来后定 M3 是否照跑(≤50%)或转 DAPO+C 轴(≥80%)

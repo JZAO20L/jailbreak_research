@@ -37,7 +37,7 @@ def _has_format_error(trajectory):
     for rec in trajectory:
         actions = rec.get("actions") or []
         if len(actions) != 1:
-            # 采集必须用单轨迹(no_skill, beam_width=1), 多候选说明来源不对
+            # 采集必须用单轨迹(beam_width=1), 多候选说明来源不对
             return True
         action = str(actions[0].get("adapted_content") or "").strip()
         if len(action) < MIN_ACTION_LEN:
@@ -48,19 +48,44 @@ def _has_format_error(trajectory):
     return False
 
 
-def build_sample(prompt, trajectory):
+def load_candidates(skills_path, top_k):
+    """复刻 env.JailbreakEnv._load_skills 的质量池逻辑, 保证 skill_idx 与采集时一致。
+
+    env: 按 name 去重(保留 quality 最高) -> 丢弃 quality<=0 -> 按 quality 降序 -> 取 top_k。
+    """
+    data = json.loads(Path(skills_path).read_text(encoding="utf-8"))
+    pool = {}
+    for s in data.get("skills", []):
+        q = float(s.get("quality_score", 0.0) or 0.0)
+        if q <= 0:
+            continue
+        name = s["name"]
+        if name not in pool or q > pool[name]["quality_score"]:
+            pool[name] = {
+                "name": name,
+                "description": s.get("description", f"攻击策略: {name}"),
+                "quality_score": q,
+            }
+    ranked = sorted(pool.values(), key=lambda x: x["quality_score"], reverse=True)
+    return ranked[:top_k]
+
+
+def build_sample(prompt, trajectory, variant, skill_library):
     """一条 conv 成功轨迹 -> 一个全轨迹 SFT 样本。
 
     消息结构与 conv_eval.evaluate_conversational 逐字一致:
-    system(SYSTEM_PROMPT) -> user(build_initial_message no_skill) -> assistant/feedback 交替,
+    system(SYSTEM_PROMPT) -> user(build_initial_message) -> assistant/feedback 交替,
     最后一个 assistant 即成功轮动作。default loss 下每个动作监督一次。
+
+    assistant 内容用 actions[0]["raw"](模型原始输出, 含 Selection/Adapted Strategy 标记):
+    skill_decide 协议下监督目标必须是原始动作文本, 剥掉标记会导致协议漂移。
     """
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": build_initial_message(prompt, None, "no_skill")},
+        {"role": "user", "content": build_initial_message(prompt, skill_library, variant)},
     ]
     for i, rec in enumerate(trajectory):
-        action = str(rec["actions"][0].get("adapted_content") or "").strip()
+        action = str(rec["actions"][0].get("raw") or rec["actions"][0].get("adapted_content") or "").strip()
         messages.append({"role": "assistant", "content": action})
         if i < len(trajectory) - 1:
             ev = rec["evals"][0]
@@ -79,9 +104,22 @@ def main():
     parser.add_argument("--results", type=str, required=True,
                         help="逗号分隔的 conv results.jsonl 文件列表(支持 part 合并后的单文件)")
     parser.add_argument("--out", type=str, required=True, help="输出 SFT jsonl 路径")
+    parser.add_argument("--variant", type=str, default="skill_decide",
+                        help="采集时的 conv variant(须与轨迹来源一致)")
+    parser.add_argument("--skills-path", type=str,
+                        default="/home/tiger/jailbreak_research/agentic_jailbreak/exp/skill_asr_sweep/seed_skills_top10.json",
+                        help="skills 库路径(skill_decide/select_adapt 系 variant 需要)")
+    parser.add_argument("--top-k-skills", type=int, default=10,
+                        help="候选 skill 数(须与采集时 --top_k_skills 一致)")
     parser.add_argument("--max-traj-per-prompt", type=int, default=1,
                         help="每条 prompt 最多取几条成功轨迹(单轨迹采集下天然为 1, 为未来多次采样保留)")
     args = parser.parse_args()
+
+    skill_library = None
+    if args.variant not in ("no_skill", "no_skill_beam"):
+        skill_library = load_candidates(args.skills_path, args.top_k_skills)
+        print(f"candidates for {args.variant}: {len(skill_library)} skills "
+              f"({[s['name'] for s in skill_library]})")
 
     files = [f.strip() for f in args.results.split(",") if f.strip()]
     per_prompt = Counter()
@@ -105,7 +143,7 @@ def main():
                         n_dropped += 1
                         continue
                     per_prompt[d["prompt"]] += 1
-                    out.write(json.dumps(build_sample(d["prompt"], traj), ensure_ascii=False) + "\n")
+                    out.write(json.dumps(build_sample(d["prompt"], traj, args.variant, skill_library), ensure_ascii=False) + "\n")
                     n_used += 1
                     turn_dist[len(traj)] += 1
 
