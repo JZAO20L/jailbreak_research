@@ -48,6 +48,14 @@ def parse_args():
                         help="Use hierarchical working memory (previous-turn summaries + last-turn full feedback)")
     parser.add_argument("--ctx_window", type=int, default=0,
                         help="C3 sliding-window context: keep system+initial user + last N turns (0 = full accumulation, C1)")
+    parser.add_argument("--ctx_compress", type=int, default=0,
+                        help="C4 压缩式记忆: 视图 token 超此阈值才把旧轮折成累计摘要 (0 = 关闭)")
+    parser.add_argument("--ctx_keep", type=int, default=3,
+                        help="C4: 摘要之外保留最近几轮原文 (仍超阈值则逐轮递减)")
+    parser.add_argument("--tokenizer_path", type=str, default="",
+                        help="C4 计 token 用的分词器; 留空则取仓库 model/Qwen3-4B")
+    parser.add_argument("--resume", action="store_true",
+                        help="从已有 results.jsonl 跳过已完成 id 续跑(配合逐条落盘, 崩溃不整片重跑)")
     parser.add_argument("--beam_width", type=int, default=2, help="Beam width (variant=beam)")
     parser.add_argument("--mode", type=str, default="conversational",
                         choices=["stateless", "conversational"],

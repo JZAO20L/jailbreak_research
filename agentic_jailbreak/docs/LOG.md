@@ -289,3 +289,32 @@
 - 并发结构核实: 训练 rollout = 16 路并发×10 轮串行/条, vLLM 服务端 max_num_seqs=256(默认) 远未打满; GPU0/1 的 0%↔100% 尖峰是轨迹内三服务串行接力的流水线气泡, 非排队。瓶颈=轨迹内串行, 单纯加训练卡收益有限; 加卡应加 target/guard 副本
 - 方案讨论(详见 TODO.md 09-08 节): ①降 num_generations→否决(零组概率翻倍) ②换 plain 4B target→暂缓(科学性+一周重做成本, 替代=C轴/DAPO/plain4B 仅作评估 transfer) ③SESS desk reject 后第三章定位讨论(方案 A/B 未定)
 - 决策检查点: M1 前 10-20 步 frac_reward_zero_std 实测值出来后定 M3 是否照跑(≤50%)或转 DAPO+C 轴(≥80%)
+
+## 2026-09-09 — 环境迁移到 4×A800-80GB + 全量重跑启动
+
+- 机器从 4×V100-32GB 换成 **4×A800-80GB(SM80)**;`output/` 不入库 → M0-M3/B 轴/RFT 数据/Ch1 checkpoint **全部丢失**,经用户确认全部重跑重采
+- 环境重建改为 requirements 驱动(临时环境):新增根 `requirements.txt` + `requirements.lock.txt`(248 行) + `docs/cookbook/bootstrap_env.sh`(幂等,自动建 `/home/tiger/jailbreak_research` 符号链接兼容 59 处硬编码 PROJECT_ROOT);版本逐字复刻 vllm 0.18.0 / ms-swift 4.3.2 / trl 0.29.1 / torch 2.10.0 / transformers 4.57.6
+- 模型按 cookbook 新约定落 `model/`(Qwen3-4B 7.6G + Qwen3Guard-Gen-4B 8.3G);`.gitignore` 补 `/model/`(原只忽略 `models/`);Xet 通道走 hf-mirror 会 401,需 `HF_HUB_DISABLE_XET=1`
+- V100 补丁链全部失活:`v100_attn_patch` 自带 SM<8 守卫;bf16 原生可用 → fp16 发散根因消失,plain-4B+5 轮的"恢复臂"不再必要
+- 新增 `scripts/start_servers_a800.sh`(bf16,guard/target 16384 ctx,policy 32768);`common.sh` 三处改动:模型路径自动探测 `model/`、**TARGET_MODEL 默认改 plain Qwen3-4B**、SKILLS_PATH 默认指向 10-skill 精选库
+- 依赖漂移坑:fastapi≥0.116 的 `_IncludedRouter` 让 vllm 0.18 的 Prometheus 中间件在**每个请求**抛异常 → `/health` 和 `/v1/*` 全 500,三服务全哑。升 instrumentator 8.x 无用(要求 starlette≥1.x)。解法=pin `fastapi>=0.115,<0.116`(已入 requirements.txt)
+- 工程坑:`common.sh::wait_for_server` 用裸 `curl -s` 判健康,curl 仅在连不上时非零 → **HTTP 500 被误判就绪**;已改为显式判 200。本次真的踩中才暴露
+- `eval_conv.sh`:默认 turns 3→**10**、top_k 5→**10**(对齐 09-02 定稿,漏传参数不再静默跑错协议);新增 `EVAL_WORKERS`(A800 用 12 路,M0 300 条约 40min);SLICE_DIR 加 workers 标签并清理派生 part*(换并发数会双计)
+- **协议解析 bug 修复(影响 skill_decide 全部历史测量的解释)**:`conv_eval.py::parse_action_text` 与 `env.py::parse_action_from_completion` 的 `Adapted Strategy:\s*\n` 要求换行,模型写成同行即失配 → 回退成"整段原始输出"当攻击内容,`Selection: Skill N` 元信息被原样发给 target,污染攻击串且使"本轮是否用了 skill"在文本层不可判别。两处同步放宽+剥除标记,四组用例交叉验证两解析器逐字一致
+- **M0 闸门结果(plain-4B target,skill_decide@top10,10 轮,C1,test C 前 300)= ASR 54.0%(162/300),avg_turns 5.98,45% 烧满 10 轮**;93% 动作带 Selection(base 策略选择性退化为"无条件全选")。含义:未饱和仍有 46pp 空间;16 条组全零概率 ~2.7e-6 → v10 的奖励饥饿问题消失
+- 数据资产脚本化:新增 `scripts/build_splits.py`(A=train[1000:2000]/B=train[0:1000]/C=test,三段两两不重叠写成断言)
+- 第一章 PAIR 91.8% 证伪(详见下节)连带推翻"因 PAIR 已近天花板故不换 target"的论证;决策:训练仍用 plain-4B,**评估补 SafeRL 当难目标/transfer**
+- 框架统一:Ch1 从 TRL 直调迁到 **ms-swift**(理由:Ch3 多轮 gym env 只有 swift 有;单轮经 `swift.rewards.orms` 自定义 ORM 可表达 AHR λ;`swift.pipelines.rlhf_main` 是纯 Python 入口 → 单文件过程式脚本)。已验证契约:注册表存**类**并以 `cls(args=args)` 构造、以 `func(completions, **kwargs)` 调用、数据列经 `RowPreprocessor.rows_to_batched` 透传(`solution` 一定到,自定义列不保证)
+- 新增 `RL4jailbreak/experiments/e2e/e2e_ahr_grpo.py`(单文件过程式:服务检查→数据→GRPO→merge→评估→落盘;评估**同时**出 official/legacy 双口径 ASR + 直发对照 + 实测每样本 API 调用数)
+- 冒烟→全链路实测通过:swift GRPO 2/2 步(峰值 40.1GiB,ORM 入 GRPO);真实 500 步/1000 条已启动(step16 ETA ~1h41m,grad_norm 0.0099 / kl 0.0017 / reward 0.066→0.144 上升 / reward_std 非零)
+- 同进程 train→eval 显存坑:trainer 不释放显存导致评估引擎按固定 util 申请被拒(free 31/79GiB vs 0.6=47.6GiB);`serve_policy` 改为按 `nvidia-smi -i <gpu>` 真实空闲量自动下调 util,不足则提示分两步跑
+- GPU 布局(三阶段):Ch1 独占 = GPU0 target(+judge)/GPU1 guard/GPU2+3 训练;Ch3 独占 = 现状 0/1/2 服务 + GPU3 trainer;两章并行 = GPU0 guard+target 各 0.4 共享、GPU1 Ch3 rollout、GPU2-3 训练。注:Ch1 旧口径 judge=target **同一模型**,同卡放两份是浪费,只有"留出裁判"补强才需独立服务
+
+## 2026-09-09 — 第一章 baseline 表(表1.4)审计:PAIR 91.8% 为伪值,判定层需统一
+
+- 91.8% 来源 = pipeline B(`baselines/asr_test_server.py --all`,原始记录 `docs/AHR-GRPO.md:25`),跑在 **2026-05-28 修正前**的代码状态
+- 根因(高置信):旧 `pair.py` 的 `generate_initial_prompt()` 直接返回**原始有害 prompt** → 迭代 1 即"直发即成功",933/1000 那版有 **274 条(27.4%)根本没被攻击就记为成功**;且 attacker 未关 thinking,**泄露的思维链原文被当作攻击 prompt 发给 target**(迭代 2 成功率 97.2%)。git 自证:`84f3a20` "ASR dropped from 93.3% to 28.5%"
+- 次要缺陷:`n_streams` 参数收了但从未使用(无流/无树搜索,**严格说不构成 PAIR**);attacker/target/judge 同为 plain Qwen3-4B;早停计数与终评是两次独立判定(26 条 iterations==1 却 is_success=false);未被查询过的最后一次 refine 结果还会抽一次奖
+- 口径不一致(同表不可比的结构性原因):①baseline 行用 `GUARD_PROMPT` system prompt 版,修正后的 pipeline A 用官方无 system prompt 版,同方法差 28.5~57.6% vs 91.8%;②分母不同(Ch1 除 valid、baselines 除 total);③Δ 列拿 **test.jsonl** 的 30.8 去减 **val.jsonl** 训出的 33.2(`eval_baseline.sh:19` 还断言"与 exp.sh 一致",实为假);④"PAIR 高成本 1000+ API 调用/样本"错约两个数量级,实测 ~10-30 次(`docs/latex_project/main.tex:330` 有此错述,同文件 285 行写的是正确的 ≤20)
+- 受影响面需连带重算:`docs/experiment_results_midterm.md:154,167`、`experiment_results_full.md:122-124`、`figures/figure_data_tables.md:99-100`、`report/thesis_progress_report.md:36,39`(结论④"成本差两个数量级")、`docs/cookbook/03_three_chapters.md:25`、`docs/AHR-GRPO.md:25,95`、本文件 TODO 09-08 节(曾用 91.8% 论证不换 target)
+- 处置:表1.4 全部行在新环境下按统一判定层重测(official Guard/仅 Unsafe/分母 total/test.jsonl 1000 条/实测调用数 + 直发单列),由 `RL4jailbreak/experiments/e2e/e2e_ahr_grpo.py` 承担;Ch3 的 baseline 列(TAP/Crescendo/PAIR)因 target 换 plain-4B 本就要重跑,同批产出

@@ -11,6 +11,11 @@ ROOT="$PWD"
 mkdir -p "$ROOT/model"
 source "$ROOT/.venv/bin/activate"
 
+# huggingface_hub 1.x 起 huggingface-cli 改名为 hf, 两个都试
+if command -v hf >/dev/null 2>&1; then HF_BIN=hf
+elif command -v huggingface-cli >/dev/null 2>&1; then HF_BIN=huggingface-cli
+else echo "ERROR: 找不到 hf / huggingface-cli, 先 pip install -U huggingface_hub"; exit 1; fi
+
 download() {
     local repo="$1" dir="$2"
     if [ -f "$ROOT/$dir/config.json" ]; then
@@ -18,7 +23,7 @@ download() {
         return
     fi
     echo "== 下载 $repo -> $dir =="
-    huggingface-cli download "$repo" --local-dir "$ROOT/$dir"
+    "$HF_BIN" download "$repo" --local-dir "$ROOT/$dir"
 }
 
 download Qwen/Qwen3-4B          model/Qwen3-4B

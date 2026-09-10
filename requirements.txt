@@ -1,0 +1,50 @@
+# =============================================================================
+# 第三章 agentic_jailbreak 实验环境依赖
+# =============================================================================
+# 版本严格复刻历史环境（docs/cookbook/README.md §1），保证与既有结论可比。
+# 装法（临时环境，不依赖 pyproject/uv.lock）:
+#   uv venv --python 3.12 .venv && uv pip install -p .venv -r requirements.txt
+#   或: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+#
+# 装完请冻结出 requirements.lock.txt 存证:  .venv/bin/pip freeze > requirements.lock.txt
+
+# --- 推理服务 (guard 8001 / target 8002 / policy 8003) ---
+vllm==0.18.0
+# ⚠️ 必须钉住 fastapi <0.116: 0.116+ 引入的 _IncludedRouter 会让 vllm 0.18 的
+#    prometheus-fastapi-instrumentator 在**每个请求**上抛
+#    "'_IncludedRouter' object has no attribute 'path'" → /health 和 /v1/* 全 500
+#    (2026-09-09 新环境实测, 三个服务全哑)。升到 instrumentator 8.x 也不能解决:
+#    它要求 starlette>=1.x, 与 vllm 0.18 的 fastapi 栈冲突。
+fastapi>=0.115,<0.116
+
+# --- 训练框架 (GRPO / SFT / merge / swift rollout) ---
+ms-swift==4.3.2
+# swift 4.3.2 内部走 TRL 0.29.1 GRPOTrainer
+# ⚠️ TRL 0.29 的默认 loss_type 已是 dapo, vanilla GRPO 对照必须显式 --loss_type grpo
+trl==0.29.1
+
+# --- 数值栈 (与 vllm 0.18 / swift 4.3.2 匹配的版本) ---
+torch==2.10.0
+transformers==4.57.6
+accelerate
+peft>=0.13,<0.14
+
+# --- 长序列显存治理 ---
+# xformers: 仅 V100 (SM7.0) 需要 —— src/v100_attn_patch.py 内含 SM<8.0 守卫,
+#           A800/A100 (SM>=8.0) 上自动不生效, 装着无害且便于回落到 V100 跑。
+#           --no-deps: 不能让 pip 因它的 torch 依赖解析改动上面的 torch 版本。
+xformers==0.0.35
+# liger: fused linear+CE, fp16 长序列回退臂 (--use_liger_kernel true) 才用到
+liger-kernel==0.8.2
+
+# --- 客户端 / 数据 / 日志 (vllm_client.py, conv_eval.py, env.py) ---
+openai
+httpx
+requests
+python-dotenv
+numpy
+tqdm
+swanlab>=0.7.18
+
+# --- 模型下载 (docs/cookbook/download_models.sh) ---
+huggingface_hub

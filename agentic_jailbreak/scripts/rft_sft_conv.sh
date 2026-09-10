@@ -17,9 +17,17 @@ source "$(dirname "$0")/common.sh"
 
 EPOCHS="${EPOCHS:-2}"
 MAX_TURNS="${MAX_TURNS:-10}"
-# 6144: 82 条样本 max 5448 token(实测 09-04); 4096 会截断 2 条长轨迹
-# batch 1 + 梯度累积 8 + 梯度检查点: batch 2 @6144 在 V100-32GB OOM(09-05)
+# 6144 是按 09-04 那批 82 条(SafeRL target)实测定的; 换 target 后成功轨迹数与
+# 长度分布都会变, 重采后务必重新量 p50/max 再定, 否则会静默截断长轨迹
 MAX_LENGTH="${MAX_LENGTH:-6144}"
+# 数值口径统一: 全项目已走 bf16 原生(服务 bf16 / GRPO DTYPE=bf16)。fp16 是 V100 无
+# bf16 计算时的被迫选择, 也是 09-09 GRPO 发散的根因; SFT 权重是 M3 的初始权重,
+# 不该再用另一套数值。要复现 V100 老口径时设 DTYPE=fp16。
+DTYPE="${DTYPE:-bf16}"
+# 有效 batch 固定 8 = PER_DEVICE × ACCUM (历史 V100 用 1×8)。A800-80GB 提 per_device
+# 只是少几轮累积, 不改配方; 动这两个值请记录, 否则与历史 M2 不可比。
+PER_DEVICE="${PER_DEVICE:-4}"
+ACCUM="${ACCUM:-2}"
 DATA="${DATA:-$OUTPUT_DIR/rft_data_conv_${MAX_TURNS}turn.jsonl}"
 EXP_DIR="$OUTPUT_DIR/rft_sft_conv${MAX_TURNS}turn_e${EPOCHS}"
 TRAIN_GPU="${TRAIN_GPU:-3}"
@@ -39,11 +47,11 @@ CUDA_VISIBLE_DEVICES=$TRAIN_GPU swift sft \
     --max_length $MAX_LENGTH \
     --num_train_epochs $EPOCHS \
     --learning_rate 1e-5 \
-    --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 8 \
+    --per_device_train_batch_size $PER_DEVICE \
+    --gradient_accumulation_steps $ACCUM \
     --gradient_checkpointing true \
-    --fp16 true \
-    --bf16 false \
+    --fp16 $([ "$DTYPE" = fp16 ] && echo true || echo false) \
+    --bf16 $([ "$DTYPE" = fp16 ] && echo false || echo true) \
     --save_strategy epoch \
     --output_dir "$EXP_DIR" \
     --report_to none

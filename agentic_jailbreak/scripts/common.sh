@@ -32,9 +32,17 @@ AGENTIC_DIR="$PROJECT_ROOT/agentic_jailbreak"
 NUM_GPUS="${NUM_GPUS:-8}"
 
 # 模型路径
-BASE_MODEL="${BASE_MODEL:-/home/tiger/models/Qwen/Qwen3-4B}"
-GUARD_MODEL="${GUARD_MODEL:-/home/tiger/models/Qwen/Qwen3Guard-Gen-4B}"
-TARGET_MODEL="${TARGET_MODEL:-/home/tiger/models/Qwen/Qwen3-4B-SafeRL}"
+# 优先仓库内 model/ (docs/cookbook 01 的新约定), 不存在则回落到机器上的历史位置;
+# 仍可用环境变量覆盖。_pick_model 以 config.json 存在判定"真的下载完了"。
+MODEL_DIR="${MODEL_DIR:-$PROJECT_ROOT/model}"
+_pick_model() {  # $1=目录名 $2=回落绝对路径
+    if [ -f "$MODEL_DIR/$1/config.json" ]; then echo "$MODEL_DIR/$1"; else echo "$2"; fi
+}
+BASE_MODEL="${BASE_MODEL:-$(_pick_model Qwen3-4B /home/tiger/models/Qwen/Qwen3-4B)}"
+GUARD_MODEL="${GUARD_MODEL:-$(_pick_model Qwen3Guard-Gen-4B /home/tiger/models/Qwen/Qwen3Guard-Gen-4B)}"
+# 09-09 决策: target 弃用 Qwen3-4B-SafeRL 改 plain Qwen3-4B (SafeRL 破解率过低
+# → ASR 奖励稀疏, GRPO 饥饿)。默认写 plain, 防止新机器误起 SafeRL target 污染口径。
+TARGET_MODEL="${TARGET_MODEL:-$(_pick_model Qwen3-4B /home/tiger/models/Qwen/Qwen3-4B)}"
 
 # 端口
 GUARD_PORT="${GUARD_PORT:-8001}"
@@ -60,7 +68,14 @@ else
 fi
 
 # 数据路径
-SKILLS_PATH="${SKILLS_PATH:-$AGENTIC_DIR/data/skills.json}"
+# 09-02 定稿协议: 训练/评估/RFT 采集统一用 10-skill 精选库(54 库按实测单调用 ASR 筛 top-10)。
+# 默认指向精选库, 防止漏传参数静默跑成 54 库口径; 消融 54 库时显式覆盖 SKILLS_PATH。
+SKILLS_TOP10_DEFAULT="$AGENTIC_DIR/exp/skill_asr_sweep/seed_skills_top10.json"
+if [ -f "$SKILLS_TOP10_DEFAULT" ]; then
+    SKILLS_PATH="${SKILLS_PATH:-$SKILLS_TOP10_DEFAULT}"
+else
+    SKILLS_PATH="${SKILLS_PATH:-$AGENTIC_DIR/data/skills.json}"
+fi
 
 # 输出目录
 OUTPUT_DIR="${OUTPUT_DIR:-$AGENTIC_DIR/output}"
@@ -191,7 +206,11 @@ wait_for_server() {
     
     local start_time=$(date +%s)
     while true; do
-        if curl -s "http://127.0.0.1:$port/health" > /dev/null 2>&1; then
+        # ⚠️ 必须判 HTTP 状态码: 裸 `curl -s` 只在连不上时非零, 服务返 500 会被误判就绪
+        local code
+        code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 \
+            "http://127.0.0.1:$port/health" 2>/dev/null || echo 000)
+        if [ "$code" = "200" ]; then
             log_info "$name server 已就绪 (port $port)"
             return 0
         fi

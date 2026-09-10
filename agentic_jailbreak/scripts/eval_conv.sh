@@ -18,10 +18,15 @@ source "$(dirname "$0")/common.sh"
 
 VARIANT="${1:-no_skill}"
 MAX_SAMPLES="${2:-200}"
-MAX_TURNS="${3:-3}"
+# 默认值 = 09-02 定稿协议(主结果口径 10 轮 + 精选 10 skill 全量候选 top_k=10);
+# 漏传参数不再会静默跑成 3 轮/top_k=5 的旧口径
+MAX_TURNS="${3:-10}"
 BEAM_WIDTH="${4:-2}"
-TOP_K="${5:-5}"
+TOP_K="${5:-10}"
 WORK_MEMORY="${6:-0}"
+# A 轴各臂(M0/M1/M2/M3)评的是不同权重, 必须带标签, 否则共用目录互相覆盖:
+#   RUN_TAG=m0 / m1 / m2 / m3
+RUN_TAG="${RUN_TAG:-}"
 PYTHON_BIN="${PYTHON_BIN:-$PROJECT_ROOT/.venv/bin/python}"
 
 DATA_PATH="${DATA_PATH:-$PROJECT_ROOT/data/dataset/processed/10k/test.jsonl}"
@@ -29,7 +34,7 @@ MEM_TAG=""
 if [ "$WORK_MEMORY" = "1" ]; then
     MEM_TAG="_mem"
 fi
-OUT_BASE="$OUTPUT_DIR/eval_results/conv_${VARIANT}_top${TOP_K}${MEM_TAG}_${MAX_TURNS}turn"
+OUT_BASE="$OUTPUT_DIR/eval_results/conv_${VARIANT}_top${TOP_K}${MEM_TAG}_${MAX_TURNS}turn${RUN_TAG:+_$RUN_TAG}"
 
 log_section "对话式评估: variant=$VARIANT, samples=$MAX_SAMPLES, turns=$MAX_TURNS, top_k=$TOP_K, work_memory=$WORK_MEMORY"
 
@@ -39,17 +44,20 @@ if ! curl -s "http://127.0.0.1:$ROLLOUT_PORT/health" > /dev/null 2>&1; then
     exit 1
 fi
 
-# 切分数据(按处理器数并行)
-SLICE_DIR="$OUTPUT_DIR/slices/conv_${VARIANT}_top${TOP_K}${MEM_TAG}_${MAX_SAMPLES}"
+# 切分数据(并行分片数: EVAL_WORKERS, 默认 4 与历史口径一致; A800 单卡可开 12+)
+EVAL_WORKERS="${EVAL_WORKERS:-4}"
+SLICE_DIR="$OUTPUT_DIR/slices/conv_${VARIANT}_top${TOP_K}${MEM_TAG}_${MAX_SAMPLES}_w${EVAL_WORKERS}${RUN_TAG:+_$RUN_TAG}"
+# 派生目录: 上一轮遗留的多余 part* 会被下面的合并步骤重复统计, 先清掉
+rm -rf "$SLICE_DIR"/part*.jsonl "$OUT_BASE"/part*
 mkdir -p "$SLICE_DIR"
-$PYTHON_BIN - "$DATA_PATH" "$MAX_SAMPLES" "$SLICE_DIR" << 'EOF'
+$PYTHON_BIN - "$DATA_PATH" "$MAX_SAMPLES" "$SLICE_DIR" "$EVAL_WORKERS" << 'EOF'
 import json, sys
 from pathlib import Path
 data_path, max_samples, out_dir = sys.argv[1], int(sys.argv[2]), Path(sys.argv[3])
+want = int(sys.argv[4])
 lines = [l for l in open(data_path) if l.strip()][:max_samples]
 n = len(lines)
-import os
-workers = min(4, n) if n > 0 else 1
+workers = max(1, min(want, n))
 size = max(1, n // workers)
 for i in range(workers):
     chunk = lines[i*size:(i+1)*size] if i < workers-1 else lines[i*size:]

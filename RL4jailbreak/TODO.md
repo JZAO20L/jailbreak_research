@@ -132,3 +132,11 @@ print(response.output_text)
 1. 我们使用的target model和judge model都是qwen3-4B,进行了复用; 
 2. 每个实验中都需要在GPU1上加载需要的模型,那么加载前需要检查GPU状态和模型是否已经加载,如果已经加载则直接使用,如果GPU1非空闲但模型没加载则需要先释放GPU1显存; 在sh脚本中实现以上逻辑
 3. 对于我们部署的模型,在reward计算时需要实现并发调用
+## 2026-09-09 表1.4 重做(阻断项,先于任何"加训练量")
+
+- [ ] **PAIR 91.8% 判定为伪值,已废弃**(根因与影响面见 `agentic_jailbreak/docs/LOG.md` 09-09 审计节)。表1.4 全部行需在统一判定层重测:Guard 官方用法(不加 system prompt)/ 仅 Unsafe 计成功 / 分母固定 total / test.jsonl 全 1000 / 每样本实测 API 调用数 / "直发"单列为 no-rewrite 对照
+- [ ] 旧 checkpoint 随 `output/` 丢失 → 方法行(33.2/32.3/30.8)必须重训重测,不能只重评
+- [ ] 载体:`experiments/e2e/e2e_ahr_grpo.py`(单文件过程式,swift `rlhf_main` 入口 + 自定义 AHR ORM;评估一次出 official/legacy 双口径)
+- [ ] 训练量:500 步基线在 A800 单卡 ~1.7h → 支持扩到 1500-2000 步 × 3 seeds × 奖励臂(顺手出 ASR-vs-steps 曲线)
+- [ ] 评估补强(比加步数更决定录用):①等预算 ASR-vs-API/GPU-h 曲线 ②留出裁判(refusal 规则判定 + 异源 guard,破"用 Qwen3Guard 训练又用它评估") ③多 target transfer(14B/跨族;Ch2 实测跨族 -66.5pp) ④3 seeds + 置信区间
+- [ ] 已知代码缺陷待修:`pair.py` 的 `n_streams` 从未使用(实为单流贪心)、attacker 未关 thinking、早停与终评两次判定 —— 决定"实现成真 PAIR"还是"改名并说明"

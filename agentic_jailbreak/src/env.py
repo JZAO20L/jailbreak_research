@@ -460,12 +460,15 @@ def parse_action_from_completion(completion: str, num_skills: int) -> Dict[str, 
     else:
         skill_idx = 0
     
-    # 解析 adapted content
-    content_match = re.search(r'Adapted Strategy:\s*\n(.+)', completion, re.DOTALL)
+    # 解析 adapted content (与 conv_eval.parse_action_text 保持逐字一致:
+    # 允许策略与 "Adapted Strategy:" 同行, 并剥除残留的 Selection 标记行)
+    content_match = re.search(r'Adapted\s+Strategy:\s*(.+)', completion, re.DOTALL)
     if content_match:
         adapted_content = content_match.group(1).strip()
     else:
         adapted_content = completion.strip()
+    adapted_content = re.sub(r'Selection:\s*Skill\s*\[?\d+\]?[ \t]*\n?', '',
+                             adapted_content, flags=re.IGNORECASE).strip()
     
     return {
         "skill_idx": skill_idx,

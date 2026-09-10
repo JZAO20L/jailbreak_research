@@ -103,6 +103,8 @@ data/dataset/wildguard_train_minimal.jsonl
 # Downloaded model caches
 **/models/*/
 !models/.gitkeep
+# docs/cookbook 新约定: 模型统一放仓库内 model/ (单数), 同样不入库
+/model/
 
 # ========================================
 # Archives

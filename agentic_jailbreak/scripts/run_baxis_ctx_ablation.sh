@@ -13,18 +13,19 @@ set -e
 cd /home/tiger/jailbreak_research/agentic_jailbreak
 source "$(dirname "$0")/common.sh"
 
-MAX_TURNS=10
+MAX_TURNS="${MAX_TURNS:-10}"
 VARIANT=skill_decide
 TOP_K_SKILLS=10
-N_SAMPLES=300
-N_PARTS=3
+N_SAMPLES="${N_SAMPLES:-300}"
+N_PARTS="${N_PARTS:-3}"
 SKILLS_TOP10="$AGENTIC_DIR/exp/skill_asr_sweep/seed_skills_top10.json"
-TEST_SRC="/home/tiger/jailbreak_research/self_evolve_skills_jailbreak/data/test_prompts.json"
-BASE_DIR="$OUTPUT_DIR/baxis_ctx"
+# split C: 由 scripts/build_splits.py 从 data/dataset/processed/10k/test.jsonl 重建
+TEST_SRC="${TEST_SRC:-$OUTPUT_DIR/test_prompts.json}"
+BASE_DIR="${BASE_DIR:-$OUTPUT_DIR/baxis_ctx}"
 PYTHON_BIN="${PYTHON_BIN:-$PROJECT_ROOT/.venv/bin/python}"
 WINDOW="${WINDOW:-3}"
 
-log_section "B 轴上下文消融: C1_full / C2_workmem / C3_window${WINDOW}, ${N_SAMPLES} 样本 × 3 片"
+log_section "B 轴上下文消融: ${ARMS:-C1_full,C2_workmem,C3_window,C4_c4000,C4_c8000} | ${N_SAMPLES} 样本 × ${N_PARTS} 片"
 
 # --- 1. 构造 test C 前 300 条切片 ---
 SLICE_DIR="$OUTPUT_DIR/slices/baxis_test${N_SAMPLES}"
@@ -61,9 +62,14 @@ PIDS=()
 run_config() {
     local cfg="$1"; shift
     local out_dir="$BASE_DIR/$cfg"
+    if [ "${RESUME:-0}" != "1" ]; then
+        rm -rf "$out_dir"
+    fi
     mkdir -p "$out_dir"
+    local resume_flag=()
+    if [ "${RESUME:-0}" = "1" ]; then resume_flag=(--resume); fi
     for j in $(seq 0 $((N_PARTS - 1))); do
-        local extra_args=("$@")
+        local extra_args=("$@" "${resume_flag[@]}")
         $PYTHON_BIN "$AGENTIC_DIR/src/eval.py" \
             --test_data "$SLICE_DIR/part$j.jsonl" --skills_path "$SKILLS_TOP10" \
             --policy_port $ROLLOUT_PORT --target_port $TARGET_PORT --guard_port $GUARD_PORT \
@@ -76,9 +82,21 @@ run_config() {
     done
 }
 
-run_config C1_full
-run_config C2_workmem --work_memory
-run_config C3_window$WINDOW --ctx_window "$WINDOW"
+# 臂列表可裁剪(逗号分隔): ARMS=C1_full,C3_window3,C4_c4000 bash ...
+# 阈值依据 09-10 实测: C1 十轮累计输入 token 中位 6.7k / p90 8.7k / max 10.0k,
+# 所以阈值必须 <10k 才会真正触发压缩(4k 约第 6-7 轮起折, 8k 只在最长尾部轨迹触发)
+ARMS="${ARMS:-C1_full,C3_window,C4_c2500,C4_c4000}"
+for arm in ${ARMS//,/ }; do
+    case "$arm" in
+        C1_full)      run_config C1_full ;;
+        C2_workmem)   run_config C2_workmem --work_memory ;;
+        C3_window)    run_config "C3_window$WINDOW" --ctx_window "$WINDOW" ;;
+        C4_c2500)     run_config C4_c2500 --ctx_compress 2500 --ctx_keep 3 ;;
+        C4_c4000)     run_config C4_c4000 --ctx_compress 4000 --ctx_keep 3 ;;
+        C4_c8000)     run_config C4_c8000 --ctx_compress 8000 --ctx_keep 3 ;;
+        *) log_error "未知臂: $arm"; exit 1 ;;
+    esac
+done
 echo "launched ${#PIDS[@]} eval processes"
 
 FAIL=0
@@ -96,25 +114,36 @@ import json, sys
 from pathlib import Path
 base = Path(sys.argv[1])
 print("\n===== B 轴上下文消融汇总 (base policy, test C 300) =====")
-print(f"{'config':<14} {'ASR':>7} {'succ/total':>11} {'avg_turns':>10}")
+hdr = f"{'config':<14} {'ASR':>7} {'succ/total':>11} {'avg_turns':>10} {'ctx_max':>8} {'full_max':>9} {'folds':>6}"
+print(hdr)
 summary = {}
 for cfg_dir in sorted(base.iterdir()):
     if not cfg_dir.is_dir():
         continue
-    total = success = 0
+    total = success = folds = 0
     turns = 0.0
+    ctx_max = full_max = 0
     for s in cfg_dir.glob("part*/summary.json"):
         d = json.load(open(s))
         total += d["total"]; success += d["success"]
         turns += d.get("avg_turns", 0) * d["total"]
+        cs = d.get("compress_stats") or {}
+        folds += cs.get("folds", 0)
+        ctx_max = max(ctx_max, cs.get("max_view", 0))
+        full_max = max(full_max, cs.get("max_full", 0))
     if total == 0:
         continue
     asr = success / total
     summary[cfg_dir.name] = {"asr": asr, "success": success, "total": total,
-                             "avg_turns": turns / total}
-    print(f"{cfg_dir.name:<14} {asr:>7.2%} {success:>6}/{total:<4} {turns/total:>10.2f}")
+                             "avg_turns": turns / total, "ctx_max_tokens": ctx_max,
+                             "full_max_tokens": full_max, "folds": folds}
+    c = f"{ctx_max:>8}" if ctx_max else f"{'-':>8}"
+    fm = f"{full_max:>9}" if full_max else f"{'-':>9}"
+    fd = f"{folds:>6}" if folds else f"{'-':>6}"
+    print(f"{cfg_dir.name:<14} {asr:>7.2%} {success:>6}/{total:<4} {turns/total:>10.2f} {c} {fm} {fd}")
 json.dump(summary, open(base / "summary.json", "w"), ensure_ascii=False, indent=2)
 print(f"\nsaved -> {base}/summary.json")
+print("注: ctx_max = 实际喂给 policy 的最大输入 token; full_max = 同批轨迹若不压缩会到的最大 token")
 EOF
 
 log_section "B 轴消融完成"

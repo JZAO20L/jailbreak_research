@@ -128,7 +128,7 @@ CUDA_VISIBLE_DEVICES=$TRAIN_GPUS swift rlhf \
     --beta 0.05 \
     $DAPO_FLAGS \
     --output_dir "$OUTPUT_SUBDIR" \
-    --report_to swanlab \
+    --report_to "${REPORT_TO:-none}" \
     --run_name "$EXP_NAME"
 
 log_section "Exp04 完成 ($EXP_NAME)"
