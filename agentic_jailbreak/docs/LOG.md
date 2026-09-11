@@ -346,3 +346,10 @@
 - **A 轴当前排序: M2 59.5% > M0 54.0% > M1 50.7%**; M3(M2 merged + GRPO)停在人工确认闸门
 - skill 分布分析(输出 output/analysis/skill_usage.json): base 选率 89.1%/M2 79.8%/M1 84.9%; base 成功轨迹更依赖 skill(95.4% vs 87.2%), RFT 反转(76.5% vs 81.2%); 按轮次选率 98.8%→71%(失败=放手触发器); top-10 按单调用 ASR 筛选, agent 语境下 skill7/8/5 最弱
 - 接力链 `scripts/chain_after_m1.sh`(新): 等 M1 收工 → merge → M1 评估 300 → M2 评估 1000, 停在 M3 前
+
+## 2026-09-11 下午 — base@1000 落数 + 链 v2 修复(15:19 事故)
+
+- **base@1000 (test C 全量) = ASR 49.60% (496/1000), avg_turns 6.30** → 与 M2@1000 (59.50%) 同口径对比 **+9.9pp**; 300 子集(54.00%)是偏易子集, 全量下 A 轴增益被低估
+- 15:19 事故: 链死在 M1 一步 —— `kill_port` 只杀 nvidia-smi 宿主 PID(容器内杀不动), base policy 的 EngineCore(330791, PPID=1) 孤儿占 GPU3 70GB → M1 policy 起不来 → set -e 停链, M3 未启动
+- **链 v2 修复**(chain_eval1000_then_m3.sh): ①kill_port 增杀 ps 可见的 `VLLM::EngineCore` 且仅 etime<24h(常驻 guard/target/rollout 引擎均>1天, 不误伤) ②每步"完成即跳过"(读顶层 summary total==1000, m0 已跳过) ③验证 skip 与 M1 起片(12 分片)
+- M1@1000 预计 ~19:50 落数 → M3(RFT+GRPO) ~20:00 起训, 明天 ~16:00 出 checkpoint
