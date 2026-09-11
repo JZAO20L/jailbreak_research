@@ -139,3 +139,19 @@ MODEL=agentic_jailbreak/output/rft_sft_conv10turn_e2_merged MODEL_TAG=rft \
 - 本节点**只跑命令**；代码走 §2 的 bundle 带回开发机
 - 每次实验产出（`output/` 不入库）如要带走：只带 `*/*/summary.json` 与 `results.jsonl`（`!**/output/**/summary.json` 反而是入库例外的，注意别把 checkpoint 打进 git）
 - 关键实验落盘后，往 `agentic_jailbreak/docs/LOG.md` 追加一行事件（只追加不改写）——这是唯一在跑实验时该做的"文档"
+---
+
+## 09-11 早间更新（接力链自动执行完毕）
+
+### A 轴数字（plain-4B / skill_decide@top10 / 10 轮 / C1 / official 口径）
+| 臂 | 样本 | ASR | avg_turns | 说明 |
+|---|---|---|---|---|
+| M0 base | 300 | 54.00% | 6.06 | B 轴 C1 复测同数 |
+| **M1 GRPO** | 300 | **50.67%** | 6.02 | 低于 base，grad_norm 震荡、未学到选择性 |
+| **M2 RFT**(516 条,2ep) | 300 / **1000** | 62.33% / **59.50%**(595/1000) | 5.57 | 全量 CI≈[56.5%,62.5%] |
+| **M3** | — | 未跑 | — | 停在人工确认闸门（`chain_after_m1.sh` 设计如此） |
+
+### 状态
+- 4 卡当前空闲（服务常驻：GPU0 guard+target / GPU2 rollout 8004 / GPU3 遗留 M2 policy 8003；GPU1 有残留意外的 e2e 引擎 ~70GB，`fuser -k 8003/tcp` 杀 API server 后 EngineCore 成孤儿，与 09-08 同坑）
+- M3 启动三步：① 停 8004 rollout → 换 M2 merged 起 rollout；② `MODEL=output/rft_sft_conv10turn_e2_merged MODEL_TAG=rft bash scripts/exp04_grpo_10turn.sh`；③ 观 grad_norm/zero_std，若 M1 的震荡复现应提前停（~30 步内可判）
+- **M1 结论待办**：若 M3 也失败 = GRPO 配方问题（lr/β/batch/num_gen 或 ASR-only 奖励），列 C 轴（过程/效率/λ）为修复方向；M3 成功 = "RFT 冷启动是 GRPO 的前提"成为 A 轴主线

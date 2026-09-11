@@ -318,3 +318,31 @@
 - 口径不一致(同表不可比的结构性原因):①baseline 行用 `GUARD_PROMPT` system prompt 版,修正后的 pipeline A 用官方无 system prompt 版,同方法差 28.5~57.6% vs 91.8%;②分母不同(Ch1 除 valid、baselines 除 total);③Δ 列拿 **test.jsonl** 的 30.8 去减 **val.jsonl** 训出的 33.2(`eval_baseline.sh:19` 还断言"与 exp.sh 一致",实为假);④"PAIR 高成本 1000+ API 调用/样本"错约两个数量级,实测 ~10-30 次(`docs/latex_project/main.tex:330` 有此错述,同文件 285 行写的是正确的 ≤20)
 - 受影响面需连带重算:`docs/experiment_results_midterm.md:154,167`、`experiment_results_full.md:122-124`、`figures/figure_data_tables.md:99-100`、`report/thesis_progress_report.md:36,39`(结论④"成本差两个数量级")、`docs/cookbook/03_three_chapters.md:25`、`docs/AHR-GRPO.md:25,95`、本文件 TODO 09-08 节(曾用 91.8% 论证不换 target)
 - 处置:表1.4 全部行在新环境下按统一判定层重测(official Guard/仅 Unsafe/分母 total/test.jsonl 1000 条/实测调用数 + 直发单列),由 `RL4jailbreak/experiments/e2e/e2e_ahr_grpo.py` 承担;Ch3 的 baseline 列(TAP/Crescendo/PAIR)因 target 换 plain-4B 本就要重跑,同批产出
+
+## 2026-09-10 — B 轴重跑完成(plain-4B target, 新 C4 机制, 4 臂 × 300)
+
+- **新臂 C4(压缩式记忆)实现**(conv_eval._ctx_view_compress): 未越阈值时视图与 C1 逐字相同(不折不调模型), 越阈值(2500/4000 token)才把旧轮折成累计摘要, 折无可折再缩窗 → 硬上界。与历史 C2(每轮追加摘要且原文一条不删, 视图严格大于 C1)本质不同——C2 当年落败是设计必然
+- 修 4 个自身 bug: 折叠先于阈值判断(退化恒滑窗)、未越阈值仍被 keep 截断、循环内重置 keep 致死循环、结尾 "w" 重写会抹掉续跑历史
+- **逐条增量落盘 + --resume**(09-03 丢 332 条事故根治): 崩溃最多丢正在跑的一条, 续跑从 results.jsonl 读完成 id, 统计从文件重算; 实服务验证(杀进程→重启→"已完成 1 条, 跳过")
+- **结果**(base policy, test C 300, 同 prompt 配对):
+  | config | ASR | avg_turns | ctx_max | full_max | folds |
+  |---|---|---|---|---|---|
+  | C1_full | **54.00%** | 6.06 | — | — | 0 |
+  | C3_window3 | 51.00% | 6.13 | — | — | 0 |
+  | C4_c2500 | 51.67% | 6.04 | 2500 | 6004 | 140 |
+  | C4_c4000 | 55.67% | 6.01 | **3971** | 10087 | 31 |
+- **C1 精确复现 M0 的 54.00%(162/300)** → 测量链可复现性验证通过
+- 配对 McNemar(同 300 条): C3 Δ=−3.00pp p=0.241 / C4@2500 Δ=−2.33pp p=0.345 / C4@4000 Δ=+1.67pp p=0.529 → **三臂 ASR 均与 C1 不可分辨(噪声内)**, n=300 分辨不了 ~3pp
+- **结论:C1 保持定稿协议(训练侧无需同步,C3/C4 的 plugin/env 缺口不再需要补);C4@4000 作为"同等 ASR 下输入 token 省 2.5×(10.1k→4.0k)+摘要调用受阈值约束"的效率叙事, 评估侧可选臂**(注意: 训练 C1→评估 C4 属于 e2e 口径可选, 不进主矩阵)
+- 产出: `output/baxis_ctx/summary.json` + 每臂 results.jsonl(逐条, 可复算配对检验)
+
+## 2026-09-11 — M1/M2 全量评估完成(接力链自动执行) + 第一章 skill 分布分析
+
+- **M1 GRPO@10轮(300步/num_gen16/lr1e-5/β0.05, base 初始) = ASR 50.67%(152/300), avg 6.02 —— 低于 M0 base 54.00%(−3.33pp)**
+  - 训练曲线: reward 中段 0.35→0.81 但 grad_norm 剧烈震荡(0.009→0.879→1.195), kl 缓升 0.044, frac_reward_zero_std 全程有 1/4-1/2 的步全零组
+  - 行为: 评估选率 84.9%, 成功轨迹选率 92.6% vs 失败 83.2% → 未学到 RFT 的"放下 skill"选择性, 行为类 base
+  - 解读: 该配方在 plain-4B 多轮对话上, vanilla GRPO(base 初始) 未超越未训练 agent; RFT(M2) 是当前唯一有效臂
+- **M2 RFT 全量(test C 1000) = ASR 59.50%(595/1000), avg 5.57**(300 子集曾 62.33%, 一致区间)
+- **A 轴当前排序: M2 59.5% > M0 54.0% > M1 50.7%**; M3(M2 merged + GRPO)停在人工确认闸门
+- skill 分布分析(输出 output/analysis/skill_usage.json): base 选率 89.1%/M2 79.8%/M1 84.9%; base 成功轨迹更依赖 skill(95.4% vs 87.2%), RFT 反转(76.5% vs 81.2%); 按轮次选率 98.8%→71%(失败=放手触发器); top-10 按单调用 ASR 筛选, agent 语境下 skill7/8/5 最弱
+- 接力链 `scripts/chain_after_m1.sh`(新): 等 M1 收工 → merge → M1 评估 300 → M2 评估 1000, 停在 M3 前
