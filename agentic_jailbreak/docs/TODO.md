@@ -158,6 +158,17 @@ C 轴代码前置：rewards.py R2/R3 接入 plugin（现 ASR-only）；R1+λ 需
 - 长时间训练的进程用 `setsid` 启动,避免被会话/进程组清理误杀
 - `run_beam_pilot.py --outdir` 传相对路径在后台环境会丢结果 → 一律绝对路径;已加 `--data` 参数支持自定义数据源
 
+#### 09-10/09-11 进程管理试错（当天各犯 ≥3 次,写死规矩）
+
+- **`pgrep/pkill -f` 会匹配到自己所在的 shell**：命令行里只要出现目标文本（包括你自己敲的模式参数、同一命令里重启脚本的字面路径），`kill $(pgrep -f xxx)` 就会把自己的 bash 也杀了（SIGTERM 143,state 丢失）。安全姿势：
+  1. 模式用字符类打断自匹配：`pgrep -f 'eval[.]py'`、`pgrep -f 'name[0-9]'`——但**仅当该命令里没有任何其他地方出现目标明文**时才成立；
+  2. 更稳：**列出(只读)与杀死分两条命令**，杀的时候只传纯数字 PID；
+  3. 带模式杀进程的命令必须独占一条命令，禁止和"重启同一目标"写在一起（本次连环三次误杀就是这么来的）。
+- **`fuser -k <port>/tcp` 杀 vLLM API server 后,`VLLM::EngineCore` 会 setsid 脱离存活并独占整卡显存**（09-08 就记过一次,09-11 复现数次）：kill 前先用 `nvidia-smi --query-compute-apps=pid,used_memory -i <gpu>` 记住 PID,API 死后直接 `kill <EngineCore PID>`;ps 里找 `VLLM::EngineCore` 是权威判据。
+- **nvidia-smi 显示宿主命名空间 PID 是"残影"别被带偏**：`/proc/<pid>` 不存在且 `kill` 报 No such process = 该 PID 是已死父进程的 CUDA context 记账;真实持有者是 `ps` 里可见的 `VLLM::EngineCore`（孤儿,PPID=1）。判断顺序：`ps -eo pid,ppid,etime,args | grep VLLM::EngineCore` → 杀可见的 → 再查显存。本次曾在 665890/750316/3805172 这类假 PID 上白耗 20 分钟。
+- **编排脚本里"生成+等待+重启同一对象"用文件而非 bash -c**：脚本以 `bash scripts/xxx.sh` 启动时 cmdline 是脚本路径,`pgrep -f` 不会匹配到它自己;而 `setsid nohup bash -c '...'` 会把整段内联文本暴露给 pgrep。链式脚本(`chain_*.sh`)还要满足:源码 `common.sh`、`set -e` 下 `[..] && 赋值` 用 if/fi、失败即停不带病往下跑、重入安全(备份目录加 `[ ! -d ]` 守卫)。
+- 顺带:同一命令里不要既 `fuser -k` 又读端口状态评估——`fuser` 的输出会混进 `$(...)` 变量造成误判;分步、显式、先查后杀。
+
 ## Phase 5: RSI 递归自我改进（后续方向，2026-08-27 记录）
 
 - 详见 `docs/RSI_DESIGN.md`（三轴闭环设计、实验矩阵、风险控制）

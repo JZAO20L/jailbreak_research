@@ -22,7 +22,8 @@
 - 依赖安装用 `uv`；模型下载走 hf-mirror 需 `HF_HUB_DISABLE_XET=1`（Xet 通道 401）
 - V100 时代的补丁全失活：`v100_attn_patch` 自带 SM<8 守卫；fp16 发散（09-09 GRPO 根因）在 A800 不存在，全程 bf16
 - 训练脚本里 `--report_to` 默认已改 none（SwanLab 无 TTY 会直接抛错）
-- 本机**无 GitHub 推送凭据**（remote 已切成 `git@github.com:JZAO20L/jailbreak_research.git`，但 `~/.ssh/config` 未配，直接 push 会 publickey 拒绝）——取代码一律用 §2 的 bundle
+- **进程管理四坑（09-10/09-11 当天各犯 ≥3 次）**：`pgrep -f` 自匹配误杀自己的 shell、`fuser -k` 后 `VLLM::EngineCore` 孤儿占整卡、nvidia-smi 宿主 PID 残影、编排"杀+重启"同命令连环误杀 —— 完整规矩见 `agentic_jailbreak/docs/TODO.md` "踩坑记录" 09-10/09-11 节，执行任何 kill 前先读
+- **推送**：remote 已切 SSH（`git@github.com:JZAO20L/jailbreak_research.git`），用 `GIT_SSH_COMMAND="ssh -i ~/.ssh/id_ed25519_gh -o IdentitiesOnly=yes" git push origin main`（`~/.ssh/config` 按用户要求未改；bundle 取代码仍是备选）
 
 ---
 
