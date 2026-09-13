@@ -55,16 +55,19 @@ RUN_TAG=m0 EVAL_WORKERS=12 bash scripts/eval_conv.sh skill_decide 300 10 2 10
 
 ---
 
-## 1. 当前实验状态快照（09-11 时点）
+## 1. 当前实验状态快照（09-11 时点，含 09-11 下午 v2 链新增）
 
 | 臂 | 初始权重 | 训练 | 评估 | ASR | 状态 |
 |----|----------|------|------|-----|------|
-| M0 直接agent | base | 无 | test C 300 | **54.0%** | ✅ 完成 |
-| M1 只GRPO | base | vanilla GRPO@10 | test C 300 | **50.67%** | ✅ 完成 |
+| M0 直接agent | base | 无 | test C 300 / 1000 | **54.0%** / **49.6%** | ✅ 完成 |
+| M1 只GRPO | base | vanilla GRPO@10 | test C 300 / 1000 | **50.67%** / 待跑 | ✅ 300 完成 |
 | M2 RFT | base→SFT | 无 RL | test C 1000 | **59.5%** | ✅ 完成 |
 | M3 RFT+GRPO | **M2 merged** | vanilla GRPO@10 | 待跑 | — | ⏳ **本 playbook 主线** |
 
-- **A 轴排序**：M2 59.5% > M0 54.0% > M1 50.7%（vanilla GRPO(base) 未超越未训练 agent；RFT 是当前唯一有效臂）
+- **A 轴排序**：M2 59.5% > M0 54.0% > M1 50.7%（300 口径；1000 口径 M0 49.6% 已落档）
+- **09-11 下午 v2 链（`scripts/chain_eval1000_then_m3.sh`）**：已补 base@1000 + M1@1000 同口径评估，
+  并修复 `kill_port` 杀不动 EngineCore 孤儿占卡的问题（见 §6 新增坑）；链尾直接起 M3。
+  若执行节点已跑过此链，M3 可能已启动/完成，先看 `output/logs/m3_20260911.log` 与 `output/multi_turn_10_agent_rft/`。
 - **B 轴（已定稿）**：C1 保持定稿协议；C4@4000 作"省 2.5× token"效率叙事可选评估臂（不进主矩阵）
 - **skill 分布**：`output/analysis/skill_usage.json`（base 选率 89.1% / M2 79.8% / M1 84.9%）
 
@@ -102,6 +105,19 @@ MERGED_DIR=output/rft_sft_conv10turn_e2_merged bash scripts/merge_rft_lora.sh
 ```
 
 ### 2.1 M3 训练（GPU2=rollout 8004, GPU3=trainer）
+
+**主路径：直接跑 v2 接力链**（推荐——自带 base@1000/M1@1000 同口径评估、完成即跳过守卫、EngineCore 清理）：
+```bash
+cd /home/tiger/jailbreak_research/agentic_jailbreak
+M2_MERGED=$PWD/output/rft_sft_conv10turn_e2_merged
+[ -f "$M2_MERGED/config.json" ] || { echo "缺 M2 merged，先做 §2.0"; exit 1; }
+
+setsid nohup bash scripts/chain_eval1000_then_m3.sh > output/logs/chain_eval_m3.log 2>&1 &
+# 流程: base@1000(49.6%) -> M1@1000 -> 起 rollout 8004=M2 merged -> 启动 M3(~20h)
+# 日志: output/logs/m3_20260911.log (训练) / chain_eval_m3.log (链)
+```
+
+**替代路径：只要 300 口径 / 已评估过 1000（跳过链的前置评估）**：
 ```bash
 cd /home/tiger/jailbreak_research/agentic_jailbreak
 V=/home/tiger/jailbreak_research/.venv/bin    # 裸 shell 无 $PROJECT_ROOT，统一用绝对路径
@@ -111,7 +127,17 @@ M2_MERGED=$PWD/output/rft_sft_conv10turn_e2_merged
 # ① 释放 GPU2 的 policy 8003，起 swift rollout 8004 = M2 merged
 #    ⚠️ A800 必须 --vllm_max_model_len 32768 --torch_dtype bfloat16
 #      （V100 版 m1_launch 的 24576+float16 是历史遗留；10 轮 C1 协议 24576 会越界）
-for pid in $(pgrep -f "port 8003"); do kill "$pid" 2>/dev/null || true; done; sleep 10
+#    ⚠️ 清进程用 v2 链的 kill_port 姿势（§6），别用裸 pgrep -f 自匹配杀自己
+kill_port(){ # $1=端口 $2=GPU（v2 链修复版：EngineCore 孤儿是 ps 里可见的）
+    fuser -k "$1/tcp" 2>/dev/null || true; sleep 8
+    P=$(nvidia-smi -i "$2" --query-compute-apps=pid --format=csv,noheader 2>/dev/null | tr '\n' ' ')
+    [ -n "$P" ] && kill $P 2>/dev/null || true
+    for ep in $(ps -eo pid,etime,comm | awk '$3=="VLLM::EngineCore" && $2 ~ /^[0-9]+:[0-9]{2}:[0-9]{2}$/ {print $1}'); do
+        kill -9 "$ep" 2>/dev/null || true
+    done
+    sleep 10
+}
+kill_port 8003 3
 CUDA_VISIBLE_DEVICES=2 setsid nohup "$V/swift" rollout \
     --model "$M2_MERGED" \
     --vllm_tensor_parallel_size 1 --port 8004 --vllm_max_model_len 32768 \
@@ -262,16 +288,19 @@ git bundle create /tmp/ch3.bundle origin/main..HEAD
 | 坑 | 对策 |
 |----|------|
 | fastapi≥0.116 → 三服务全 500 | 依赖锁在 `>=0.115,<0.116`，勿升 |
-| `wait_for_server` 裸 curl 误判就绪 | 必须判 HTTP 200（common.sh 已修） |
+| `wait_for_server` 裸 curl 误判就绪 | 必须判 HTTP 200（common.sh 已修）；swift rollout 常回 307=活着，000=没起 |
 | 10 轮 C1 协议 input 可达 14k+ | 服务 max-model-len：policy **32768**（24576 差 1 token 越界，C2 事故）；guard/target 16384 |
 | 12 路并发 client 超时 60s 打穿 | 超时已统一 1000s；崩溃用 `--resume` 续跑，逐条落盘 |
 | 训练 rollout 用标准 vllm serve | 会 404 —— 训练必须 `swift rollout`（带 communicator 端点），评估才用 vllm serve |
 | M3 merge 用 BASE_MODEL 当 base | **错误** —— M3 从 M2 merged 训的 LoRA，base 必须是 `output/rft_sft_conv10turn_e2_merged` |
-| 各臂评估共用输出目录覆盖 | 每次评估带 `RUN_TAG=m0/m1/m2/m3/m2_<bench>` |
+| 各臂评估共用输出目录覆盖 | 每次评估带 `RUN_TAG=m0/m1/m2/m3/m2_<bench>`；链脚本会先备份 300 子集为 `*_300subset` |
 | NUM_GPUS 未前置声明 | 4 卡布局必须在 `source common.sh` 前 `NUM_GPUS=4`（否则走 8 卡布局，NCCL no CUDA-capable device） |
 | MASTER_PORT 29500 段预占 | 训练默认 43210（exp04 已写死） |
 | 换机器 output/ 丢失 | 必跑 `build_splits.py` 重建 split A/B/C（隔离断言兜底） |
 | target 误起 SafeRL 污染口径 | TARGET_MODEL 默认 plain-4B（common.sh 已改） |
+| **`pgrep/pkill -f` 匹配到自己 shell** | 命令里出现目标明文就会误杀自己（SIGTERM 143）。安全姿势：模式用字符类打断（`eval[.]py`）、列出与杀死分两条命令、带模式杀进程独占一条命令 |
+| **`fuser -k` 后 EngineCore 孤儿占整卡** | vLLM API server 死后 `VLLM::EngineCore` 会 setsid 脱离独占显存。权威判据：`ps -eo pid,ppid,etime,args \| grep VLLM::EngineCore`，杀 <24h 的（常驻引擎均 >1 天，不误伤） |
+| **nvidia-smi PID 是残影** | `/proc/<pid>` 不存在且 kill 报 No such process = 已死父进程的 CUDA context 记账。别在假 PID 上白耗，先查 `ps` 找 EngineCore |
 
 ---
 
@@ -287,13 +316,10 @@ NUM_GPUS=4 bash agentic_jailbreak/scripts/start_servers_a800.sh
 cd agentic_jailbreak && RUN_TAG=m0 EVAL_WORKERS=12 bash scripts/eval_conv.sh skill_decide 300 10 2 10
 
 # 2. M3（入口 B 先 §2.0 重造 M2；cd agentic_jailbreak 后）
-V=/home/tiger/jailbreak_research/.venv/bin
-#    训练
+#    推荐直接跑 v2 链（含 base@1000/M1@1000 评估 + M3 启动 + EngineCore 清理）
 M2_MERGED=$PWD/output/rft_sft_conv10turn_e2_merged
-CUDA_VISIBLE_DEVICES=2 setsid nohup "$V/swift" rollout --model "$M2_MERGED" \
-    --vllm_tensor_parallel_size 1 --port 8004 --vllm_max_model_len 32768 \
-    --vllm_gpu_memory_utilization 0.8 --torch_dtype bfloat16 > output/logs/rollout_m3.log 2>&1 &
-MODEL="$M2_MERGED" MODEL_TAG=rft nohup bash scripts/exp04_grpo_10turn.sh > output/logs/m3_train.log 2>&1 &
+setsid nohup bash scripts/chain_eval1000_then_m3.sh > output/logs/chain_eval_m3.log 2>&1 &
+#    （替代：只要 300 口径时手动 rollout+train，见 §2.1 替代路径）
 #    merge
 CKPT=$(ls -dt output/multi_turn_10_agent_rft/*/checkpoint-* | head -1)
 CUDA_VISIBLE_DEVICES=3 "$V/swift" export --model "$M2_MERGED" --adapters "$CKPT" \
