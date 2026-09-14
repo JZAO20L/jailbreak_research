@@ -163,6 +163,10 @@ agentic_jailbreak/exp/results/sess_saferl_top10/
 agentic_jailbreak/exp/skill_asr_sweep/results.jsonl
 **/*.safetensors
 
+# LoRA checkpoints 入库例外 (只提交 adapter 权重, base/merged 不入库)
+!agentic_jailbreak/checkpoints/**/*.safetensors
+!agentic_jailbreak/checkpoints/**/*.json
+
 # Baseline experiment raw dumps (keep README/summary)
 baselines/experiments/**/results.jsonl
 

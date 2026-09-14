@@ -108,6 +108,26 @@ C 轴代码前置：rewards.py R2/R3 接入 plugin（现 ASR-only）；R1+λ 需
 
 统一超参：num_generations=16，其余同 exp03（lr 1e-5 / β 0.05 / temp 0.9 / 300 步）。
 
+### 2026-09-14 计划：长臂续训实验（epoch 议题，M4 完成后执行）
+
+> **背景（epoch 数据账）**：GRPO 臂（M1/M3/M4）300 步 = **0.3 epoch**（B 段 1000 条，
+> 1 epoch = 1000 步，per_device=1 × num_gen16 每组 1 prompt），B 段 ~70% prompt 从未进训练；
+> 唯一有效臂 RFT (M2) 是 **2 epochs × 全部 530 条**。GRPO 双负收益（M1 −3.3pp / M3 −4.3pp）
+> 的候选解释之一 = 训练量不足（advantage 估计噪声 + 覆盖不足），需与"算法/稀疏奖励"解耦。
+>
+> **验证设计**（各自 checkpoint 续训，不重训；区间评估画 "ASR vs 训练步数" 曲线）：
+>
+> | 臂 | 初始 | 续训 | 验证 |
+> |----|------|------|------|
+> | M5 | M3 checkpoint-300 | vanilla GRPO 600/900 步（0.6/0.9 epoch） | 30%→90% 覆盖后 GRPO 能否转正 |
+> | M6 | M4 checkpoint-300 | DAPO 600 步（0.6 epoch） | DAPO + 长 epoch 组合 |
+>
+> **执行要点**：① 续训 = `max_steps 900` + `resume_from_checkpoint <ckpt>`（需要完整 checkpoint，
+> 含 optimizer——output/ 本机保留，不入库）；② 每 300 步评估一次（RUN_TAG=m5_s300/m5_s600/m5_s900、m6_s600）；
+> ③ 若 900 步仍无转正迹象 → 支持"算法/奖励"主因，C 轴提前。
+>
+> **状态**：M4（300 步 DAPO）训练中（09-14 启动，重采样拖慢 ~25-30h）；M5/M6 待跑。
+
 **⚠️ RFT 数据量预警（09-03）**：skill_decide@10skills 协议下 split A 1000 条采集 ASR 仅 **~8-9%**（幸存片 61/664=9.2%，补跑片 3.5-11.1%，平均轮数 9.5-9.7）→ M2 SFT 成功轨迹仅 **~85-90 条**，偏薄；M3 GRPO 组内全零梯度风险高。含义：(a) M2 增益可能有限；(b) 若 B 轴 C2/C3 提升基座 ASR，按新 harness 重采可同步缓解数据量与稀疏问题。
 
 **RFT v3 数据链路（08-31/09-01 写代码，09-02 切 skill_decide@10skills 后实跑）**：

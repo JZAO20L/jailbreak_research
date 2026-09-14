@@ -235,6 +235,33 @@ CUDA_VISIBLE_DEVICES=3 "$V/swift" rlhf \
 **观察点**：① `frac_reward_zero_std` 应显著低于 M1/M3（过滤生效的直接证据）；
 ② 训练时间因重采样变长（A100 实测 ~15-20h/300 步）；③ clip_high 0.28 放宽上限理论上利于高 advantage 组。**前 20 步若 zero_frac 仍 ≥80% 且重采样告警频繁，需查 env 奖励是否退化（如 target/guard 服务异常）。**
 
+### 2.6 长臂续训实验（09-14 计划，epoch 议题；M4 完成后执行）
+
+> **动机**：GRPO 臂 300 步 = 0.3 epoch（B 段 1000 条，1 epoch = 1000 步；对照组 RFT = 2 epochs 全数据）。
+> 在各自 checkpoint 上续训（含 optimizer 的完整 ckpt，output/ 保留），区间评估画 ASR vs 步数曲线。
+
+```bash
+cd /home/tiger/jailbreak_research/agentic_jailbreak
+V=/home/tiger/jailbreak_research/.venv/bin
+
+# M5: M3 ckpt 续训 vanilla GRPO → 900 步（0.9 epoch）；每 300 步 merge+评估一次
+CUDA_VISIBLE_DEVICES=3 "$V/swift" rlhf \
+    --rlhf_type grpo --model "$M2_MERGED" \
+    --resume_from_checkpoint output/multi_turn_10_agent_rft/v0-*/checkpoint-300 \
+    --dataset output/grpo_data.jsonl --external_plugins src/plugin.py \
+    --multi_turn_scheduler gym_scheduler --gym_env jailbreak_env --use_gym_env true \
+    --max_turns 10 --use_vllm true --vllm_mode server --vllm_server_host 127.0.0.1 \
+    --vllm_server_port 8004 --vllm_server_timeout 1000 --loss_type grpo \
+    --per_device_train_batch_size 1 --generation_batch_size 16 --gradient_accumulation_steps 8 \
+    --max_steps 900 --learning_rate 1e-5 --num_generations 16 --max_completion_length 2048 \
+    --fp16 false --bf16 true --gradient_checkpointing true --beta 0.05 \
+    --output_dir output/multi_turn_10_agent_rft_long --run_name multi_turn_10_agent_rft_long
+# M6: 同款把 M4 ckpt + --loss_type dapo + DAPO_FLAGS（详见 TODO.md 09-14 节）
+# 评估: 每 300 步 RUN_TAG=m5_s300/m5_s600/m5_s900 跑 eval_conv.sh（merge 用对应 ckpt，base 规则同 §2.2）
+```
+
+**判定**：900 步（M5）/600 步（M6）仍无转正迹象 → GRPO 负收益主因 = 算法/稀疏奖励（非训练量），转 C 轴。
+
 ---
 
 ## 3. C 轴 Reward 组合（A 轴后；⚠️ 需开发机先完成代码改造）

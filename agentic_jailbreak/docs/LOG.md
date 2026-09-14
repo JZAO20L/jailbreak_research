@@ -362,3 +362,10 @@
 - **✅ M3 首发结果（本机，test C 300）= 56.67% (170/300)，avg_turns 5.57** —— 低于 M2 61.0%（−4.3pp）。训练曲线：300 步全程 reward_mean 0.3~0.6 震荡、`frac_reward_zero_std` 1/3~2/3、无上升趋势；末步 0.97 为单组噪声。**与 M1 同构：vanilla GRPO 在 RFT 初始上依旧负收益 → A 轴排序 M2 > M3 > M0 > M1，RFT (M2) 是唯一有效后训练臂**，为 C 轴与 DAPO 臂提供动机
 - **M4 DAPO 臂启动（09-14 14:10）**：M2 merged 初始 + `--loss_type dapo --dynamic_sample true --max_resample_times 3 --epsilon_high 0.28`（其余同 M3：300 步 / num_gen 16 / lr 1e-5 / β 0.05 / bf16 / per_device 1 / accum 8 / GPU3）。参数链核实：`dynamic_sample`/`max_resample_times` 为 **swift 层字段**（TRL GRPOConfig 无），实现于 `swift/rlhf_trainers/grpo_trainer.py`（std=0 组重采样，最多 max_resample_times 轮）；`epsilon_high` 在 TRL GRPOConfig；TRL 0.29 `loss_type` 默认即 dapo
 - **训练速度**：A100 上 M3 全程 ~1.4min/步（11h 完成 300 步 vs A800 预期 20h），rollout/环境并发吃满；M4 因重采样预估 ~15-20h
+
+## 2026-09-14 下午 — 长臂实验计划（epoch 议题）+ LoRA ckpt 入库
+
+- **epoch 数据账（用户提出"训练量是否太少"）**：GRPO 臂 300 步 = **0.3 epoch**（B 段 1000 条，1 epoch = 1000 步，per_device=1 + num_gen16 每组 1 prompt）；对照 RFT (M2) = **2 epochs × 全部 530 条**（checkpoint-134 = 2 epochs 完成）。唯一有效臂是全数据多轮次、负收益臂是 30% 数据单次见 → "训练量不足"与"算法/稀疏奖励"需解耦验证
+- **计划定稿（TODO.md 09-14 节）**：M5 = M3 ckpt 续训 vanilla GRPO 至 600/900 步（0.6/0.9 epoch）、M6 = M4 ckpt 续训 DAPO 至 600 步；每 300 步区间评估，画 ASR vs 训练步数曲线；900 步仍无转正 → 支持主因在算法/奖励，C 轴提前。续训需完整 checkpoint（含 optimizer，output/ 本机保留）
+- **LoRA ckpt 入库（用户要求，只提交 LoRA）**：新增 `agentic_jailbreak/checkpoints/`（M2 checkpoint-134 64M + M3 checkpoint-300 32M 的 adapter_model.safetensors + 配置/args/README），README 说明 base 对应关系（⚠️ M3 的 merge base 是 M2 merged 而非 base）与 merge 命令；`.gitignore` 为 `checkpoints/` 加 safetensors/json 例外（全局 `**/*.safetensors` 规则原本会拦）；merged 权重（7.6G 级）与完整训练产出仍不入库
+- **框架统一结论**：第三章训练链路（GRPO/DAPO/SFT/merge）已全部 ms-swift 4.3.2；第一章残留 3 个 TRL 直调历史脚本（hybrid/adaptive reward exp）按用户指示不动
