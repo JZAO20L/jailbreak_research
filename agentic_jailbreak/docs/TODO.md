@@ -100,10 +100,11 @@ C 轴代码前置：rewards.py R2/R3 接入 plugin（现 ASR-only）；R1+λ 需
 
 | 臂 | 初始权重 | 训练 | 状态 |
 |----|----------|------|------|
-| M0 直接 agent | base | 无，评估@10 | 部分完成：采集 survivors 61/664≈9.2%（可作 M0 口径参考，正式 300 条 B 轴 C1 臂覆盖） |
-| M1 只GRPO | base | vanilla GRPO@10，**显式 `--loss_type grpo`**（TRL 0.29 默认已是 dapo，不设则对照不干净） | 脚本已写 `exp04_grpo_10turn.sh`，**HOLD 至 B 轴出结果** |
-| M2 RFT | base→SFT | 无 RL，评估@10 | 采集收尾中（finalize 脚本：补 28 条 + merge assert 1000 + build SFT）；**SFT HOLD 至 B 轴出结果** |
-| M3 RFT+GRPO | M2 merged | vanilla GRPO@10（同 M1 超参） | 待 M2 完成 |
+| M0 直接 agent | base | 无，评估@10 | ✅ **54.0%**（A800 @300）/ **49.6%**（@1000）；本机 A100 复现 51.7% |
+| M1 只GRPO | base | vanilla GRPO@10，**显式 `--loss_type grpo`**（TRL 0.29 默认已是 dapo，不设则对照不干净） | ✅ **50.67%**（@300，A800）——低于 M0，vanilla GRPO 在 base 初始上负收益 |
+| M2 RFT | base→SFT | 无 RL，评估@10 | ✅ **59.5%**（@1000，A800）/ 62.3%（@300）；本机 A100 复现 61.0% |
+| M3 RFT+GRPO | M2 merged | vanilla GRPO@10（同 M1 超参） | ✅ **56.67%**（@300，本机 A100 首发）——低于 M2，GRPO 叠加 RFT 依旧负收益 |
+| M4 DAPO | M2 merged | `--loss_type dapo --dynamic_sample true --max_resample_times 3 --epsilon_high 0.28`（同 M3 其余超参） | 🔄 训练中（09-14 启动，@300） |
 
 统一超参：num_generations=16，其余同 exp03（lr 1e-5 / β 0.05 / temp 0.9 / 300 步）。
 

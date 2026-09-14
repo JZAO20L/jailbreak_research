@@ -353,3 +353,12 @@
 - 15:19 事故: 链死在 M1 一步 —— `kill_port` 只杀 nvidia-smi 宿主 PID(容器内杀不动), base policy 的 EngineCore(330791, PPID=1) 孤儿占 GPU3 70GB → M1 policy 起不来 → set -e 停链, M3 未启动
 - **链 v2 修复**(chain_eval1000_then_m3.sh): ①kill_port 增杀 ps 可见的 `VLLM::EngineCore` 且仅 etime<24h(常驻 guard/target/rollout 引擎均>1天, 不误伤) ②每步"完成即跳过"(读顶层 summary total==1000, m0 已跳过) ③验证 skip 与 M1 起片(12 分片)
 - M1@1000 预计 ~19:50 落数 → M3(RFT+GRPO) ~20:00 起训, 明天 ~16:00 出 checkpoint
+
+## 2026-09-13/14 — 新执行节点 4×A100-80GB：全链路从零重建 + M3 首发 + M4 DAPO 启动
+
+- **环境重建（09-13 晚）**：新节点 4×A100-SXM4-80GB（与 A800 同为 SM80，bf16 原生）。`bootstrap_env.sh` 的 uv 严格解析失败——当前 PyPI 上 `vllm==0.18.0` 依赖链 `model-hosting-container-standards>=0.1.13 → starlette>=0.49.1` 与 requirements.txt 的 `fastapi>=0.115,<0.116` 互斥（历史 pin 已无法解析）。改用 `requirements.lock.txt`（fastapi 0.141.1 + starlette 0.52.1）精确安装成功
+- **fastapi 0.141.1 隐患复发与根治**：`vllm 0.18.0 serve` 的 `entrypoints/serve/instrumentator` 用 prometheus_fastapi_instrumentator 7.1.0，其 `routing._get_route_name` 在 fastapi≥0.116 的 `_IncludedRouter` 上取 `.path` 抛 AttributeError → 每请求 500、三服务全哑（与 09-09 事故同根）。pin fastapi<0.116 在当前依赖图下不可行 → 改为 **sitecustomize.py 补丁**（`.venv/lib/python3.12/site-packages/sitecustomize.py`）：给 `_get_route_name` 包 try/except AttributeError 返回 None（路由匹配由 `route.matches()` 决定，`.path` 仅作 metric label，语义安全）。三服务 /health 全 200
+- **测量链复现**：冒烟 M0@300 两盘 = 48.67% / 51.67%（闸门 54.0%，重跑盘 −2.3pp 在 ±3pp 内，avg_turns 6.04 与历史 6.06 吻合）；RFT 采集 split A 1000 条 **ASR 53.1%**（531 成功 → 530 条全轨迹 SFT 样本，token 长度 p50=720/max=5533 全在 6144 内）；M2 SFT 2 epochs → merge → **M2@300 = 61.0%**（历史 62.3%，复现成功）
+- **✅ M3 首发结果（本机，test C 300）= 56.67% (170/300)，avg_turns 5.57** —— 低于 M2 61.0%（−4.3pp）。训练曲线：300 步全程 reward_mean 0.3~0.6 震荡、`frac_reward_zero_std` 1/3~2/3、无上升趋势；末步 0.97 为单组噪声。**与 M1 同构：vanilla GRPO 在 RFT 初始上依旧负收益 → A 轴排序 M2 > M3 > M0 > M1，RFT (M2) 是唯一有效后训练臂**，为 C 轴与 DAPO 臂提供动机
+- **M4 DAPO 臂启动（09-14 14:10）**：M2 merged 初始 + `--loss_type dapo --dynamic_sample true --max_resample_times 3 --epsilon_high 0.28`（其余同 M3：300 步 / num_gen 16 / lr 1e-5 / β 0.05 / bf16 / per_device 1 / accum 8 / GPU3）。参数链核实：`dynamic_sample`/`max_resample_times` 为 **swift 层字段**（TRL GRPOConfig 无），实现于 `swift/rlhf_trainers/grpo_trainer.py`（std=0 组重采样，最多 max_resample_times 轮）；`epsilon_high` 在 TRL GRPOConfig；TRL 0.29 `loss_type` 默认即 dapo
+- **训练速度**：A100 上 M3 全程 ~1.4min/步（11h 完成 300 步 vs A800 预期 20h），rollout/环境并发吃满；M4 因重采样预估 ~15-20h

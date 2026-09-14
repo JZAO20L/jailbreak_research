@@ -55,16 +55,18 @@ RUN_TAG=m0 EVAL_WORKERS=12 bash scripts/eval_conv.sh skill_decide 300 10 2 10
 
 ---
 
-## 1. 当前实验状态快照（09-11 时点，含 09-11 下午 v2 链新增）
+## 1. 当前实验状态快照（09-14 时点，含 M3 完成 + M4 DAPO 启动）
 
 | 臂 | 初始权重 | 训练 | 评估 | ASR | 状态 |
 |----|----------|------|------|-----|------|
 | M0 直接agent | base | 无 | test C 300 / 1000 | **54.0%** / **49.6%** | ✅ 完成 |
 | M1 只GRPO | base | vanilla GRPO@10 | test C 300 / 1000 | **50.67%** / 待跑 | ✅ 300 完成 |
 | M2 RFT | base→SFT | 无 RL | test C 1000 | **59.5%** | ✅ 完成 |
-| M3 RFT+GRPO | **M2 merged** | vanilla GRPO@10 | 待跑 | — | ⏳ **本 playbook 主线** |
+| M3 RFT+GRPO | **M2 merged** | vanilla GRPO@10 | test C 300 | **56.67%**（本机 A100 首发） | ✅ 完成（09-14） |
+| M4 DAPO | **M2 merged** | dapo loss + dynamic_sample | 待跑 | — | 🔄 训练中（09-14 启动） |
 
-- **A 轴排序**：M2 59.5% > M0 54.0% > M1 50.7%（300 口径；1000 口径 M0 49.6% 已落档）
+- **A 轴排序**：M2 59.5% > M3 56.7% > M0 54.0% > M1 50.7%（300 口径；1000 口径 M0 49.6% 已落档）——**vanilla GRPO 在 base 与 RFT 初始上双负收益，RFT (M2) 是唯一有效后训练臂**
+- **09-14 新执行节点（4×A100-80GB）成果**：全链路从零重建（环境/模型/数据/服务/冒烟/M2 复现）见 LOG 09-13/14；M4 DAPO 命令见 §2.5
 - **09-11 下午 v2 链（`scripts/chain_eval1000_then_m3.sh`）**：已补 base@1000 + M1@1000 同口径评估，
   并修复 `kill_port` 杀不动 EngineCore 孤儿占卡的问题（见 §6 新增坑）；链尾直接起 M3。
   若执行节点已跑过此链，M3 可能已启动/完成，先看 `output/logs/m3_20260911.log` 与 `output/multi_turn_10_agent_rft/`。
@@ -185,13 +187,53 @@ RUN_TAG=m3 EVAL_WORKERS=12 bash scripts/eval_conv.sh skill_decide 300 10 2 10
 # 产出: output/eval_results/conv_skill_decide_top10_10turn_m3/summary.json
 ```
 
-### 2.4 A 轴四臂汇总（M3 完成后，回填下表）
+### 2.4 A 轴四臂汇总（09-14 已回填；M4 DAPO 完成后在此追加一行）
 | 臂 | 初始 | 训练 | test C | ASR |
 |----|------|------|--------|-----|
-| M0 | base | — | 300 | 54.0% |
+| M0 | base | — | 300 | 54.0%（本机复现 51.7%） |
 | M1 | base | GRPO | 300 | 50.67% |
-| M2 | base→SFT | — | 1000 | 59.5% |
-| M3 | M2 merged | GRPO | 300 | **__?__** |
+| M2 | base→SFT | — | 1000 | 59.5%（@300: 62.3%，本机 61.0%） |
+| M3 | M2 merged | GRPO | 300 | **56.67%**（本机 09-14 首发；@1000 待补） |
+| M4 | M2 merged | DAPO | 300 | **__?__** |
+
+### 2.5 M4 DAPO 臂（09-14 启动；vanilla GRPO 双负收益后的算法对照臂）
+
+**动机**：M1/M3 的 vanilla GRPO 在 base 与 RFT 初始上均负收益（−3.3pp / −4.3pp），
+零组稀疏（frac_reward_zero_std 1/3~2/3）是最大嫌疑 → DAPO 动态采样直接过滤 std=0 组。
+
+**参数链核实（09-14）**：
+- `dynamic_sample` / `max_resample_times` 是 **swift 层字段**（TRL GRPOConfig 没有），
+  实现于 `swift/rlhf_trainers/grpo_trainer.py::_resample_zero_variance_groups`（std=0 组丢弃，
+  从备用 dataloader 换下一组，最多 max_resample_times 轮）
+- `epsilon_high` 是 TRL GRPOConfig 字段（`epsilon_high=0.28` 即 DAPO Clip-Higher）
+- TRL 0.29 的 `--loss_type` 默认就是 `dapo`（M1/M3 必须显式 `--loss_type grpo` 才是 vanilla）
+
+**命令**（M2 merged 初始；其余超参与 M3 完全一致保证单变量对照）：
+```bash
+cd /home/tiger/jailbreak_research/agentic_jailbreak
+V=/home/tiger/jailbreak_research/.venv/bin
+M2_MERGED=$PWD/output/rft_sft_conv10turn_e2_merged
+# ① 起 rollout 8004 = M2 merged（GPU2，同 §2.1 姿势: --vllm_max_model_len 32768 --torch_dtype bfloat16）
+# ② 训练
+export PYTORCH_ALLOC_CONF=expandable_segments:True ROLLOUT_PORT=8004 MASTER_ADDR=127.0.0.1 MASTER_PORT=43210
+CUDA_VISIBLE_DEVICES=3 "$V/swift" rlhf \
+    --rlhf_type grpo --model "$M2_MERGED" \
+    --dataset "$PWD/output/grpo_data.jsonl" \
+    --external_plugins "$PWD/src/plugin.py" \
+    --multi_turn_scheduler gym_scheduler --gym_env jailbreak_env --use_gym_env true \
+    --max_turns 10 --use_vllm true --vllm_mode server \
+    --vllm_server_host 127.0.0.1 --vllm_server_port 8004 --vllm_server_timeout 1000 \
+    --loss_type dapo --dynamic_sample true --max_resample_times 3 --epsilon_high 0.28 \
+    --per_device_train_batch_size 1 --generation_batch_size 16 --gradient_accumulation_steps 8 \
+    --max_steps 300 --learning_rate 1e-5 --num_generations 16 --max_completion_length 2048 \
+    --fp16 false --bf16 true --gradient_checkpointing true --beta 0.05 \
+    --output_dir output/multi_turn_10_agent_rft_dapo --report_to none \
+    --run_name multi_turn_10_agent_rft_dapo
+# merge → 评估同 §2.2/§2.3（RUN_TAG=m4）
+```
+
+**观察点**：① `frac_reward_zero_std` 应显著低于 M1/M3（过滤生效的直接证据）；
+② 训练时间因重采样变长（A100 实测 ~15-20h/300 步）；③ clip_high 0.28 放宽上限理论上利于高 advantage 组。**前 20 步若 zero_frac 仍 ≥80% 且重采样告警频繁，需查 env 奖励是否退化（如 target/guard 服务异常）。**
 
 ---
 
