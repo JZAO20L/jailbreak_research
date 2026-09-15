@@ -378,3 +378,14 @@
 - avg_turns 5.02 < M2 5.44 < M0 6.0：DAPO 训练后策略更早得手（行为层面：更快找到第一击）
 - 与 M3 单变量差异：仅 loss_type=dapo + dynamic_sample + epsilon_high（其余超参/初始权重/数据全同）→ 负收益主因 = 稀疏奖励导致的零组空转（算法侧），非训练量（epoch）单因素；M5/M6 长臂仍跑以测 epoch 余量
 - LoRA 入库 `checkpoints/M4_dapo_10turn/`（32M）；merged 在 `output/m4_10turn_merged/`
+
+## 2026-09-15 — M5 长臂启动（方案 B）+ 续训排障链四连
+
+- **M5 目标**：verif epoch 议题——M3 终态（300 步）续训至累计 900 步（0.9 epoch），区间评估画 ASR-vs-步数曲线
+- **排障链（四次尝试才起跑）**：
+  - ① resume + `adamw_torch_fused`：`RuntimeError: params, grads, exp_avgs... same dtype`（resume 加载的 optimizer state 与新建模型参数 dtype 组合在 `_fused_adam` 内核炸）
+  - ② resume + `--optim adamw_torch`：args 生效但 traceback 仍走 `_fused_adam`（TRL 内部优化器路径未改）→ **结论：本环境 TRL resume 不可用**
+  - ③ 弃 resume，方案 B 初版：`MASTER_PORT 43210 EADDRINUSE`（上一失败 run 的 TCPStore 残留）
+  - ④ 换 43212：trainer 连 rollout `vllm_group_port 51216` TCPStore 超时 300s——反复失败重启污染了 rollout 侧 group 状态 → **干净重启 rollout 后恢复**
+- **M5 最终语义（方案 B）**：初始 = `m3_10turn_merged`（M2 merged + M3 LoRA，完整权重，策略权重与 M3 连续），全新 run 600 步 + `--save_steps 300`（每 300 步落 ckpt 供区间评估）；lr/optimizer 状态重置（cosine 从 1e-5 重启）。**累计步数口径 = M3 300 + 本 run 步数**（600 / 900 两档评估）——对"ASR vs 累计步数"曲线策略连续性成立
+- 教训：GRPO 续训若要保留 optimizer 语义需避免 resume（或先解决 dtype 组合）；重启链任何一环（rollout/端口）失败后建议整体干净重启
