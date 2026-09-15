@@ -63,9 +63,10 @@ RUN_TAG=m0 EVAL_WORKERS=12 bash scripts/eval_conv.sh skill_decide 300 10 2 10
 | M1 只GRPO | base | vanilla GRPO@10 | test C 300 / 1000 | **50.67%** / 待跑 | ✅ 300 完成 |
 | M2 RFT | base→SFT | 无 RL | test C 1000 | **59.5%** | ✅ 完成 |
 | M3 RFT+GRPO | **M2 merged** | vanilla GRPO@10 | test C 300 | **56.67%**（本机 A100 首发） | ✅ 完成（09-14） |
-| M4 DAPO | **M2 merged** | dapo loss + dynamic_sample | 待跑 | — | 🔄 训练中（09-14 启动） |
+| M4 DAPO | **M2 merged** | dapo loss + dynamic_sample | test C 300 | **64.33%**（09-15 首发） | ✅ 完成（首个超越 RFT 的 RL 臂） |
+| M5 长臂 | M3 ckpt 续训 | vanilla GRPO@900 | 待跑 | — | 🔄 训练中（09-15 启动） |
 
-- **A 轴排序**：M2 59.5% > M3 56.7% > M0 54.0% > M1 50.7%（300 口径；1000 口径 M0 49.6% 已落档）——**vanilla GRPO 在 base 与 RFT 初始上双负收益，RFT (M2) 是唯一有效后训练臂**
+- **A 轴排序（09-15 更新）**：M4 64.3% > M2 61.0% > M3 56.7% > M0 54.0% > M1 50.7%——**vanilla GRPO 双负收益（−3.3/−4.3pp），DAPO 翻正（+3.3pp）；主因 = 稀疏奖励零组空转（算法侧）**，epoch 余量由 M5/M6 长臂测
 - **09-14 新执行节点（4×A100-80GB）成果**：全链路从零重建（环境/模型/数据/服务/冒烟/M2 复现）见 LOG 09-13/14；M4 DAPO 命令见 §2.5
 - **09-11 下午 v2 链（`scripts/chain_eval1000_then_m3.sh`）**：已补 base@1000 + M1@1000 同口径评估，
   并修复 `kill_port` 杀不动 EngineCore 孤儿占卡的问题（见 §6 新增坑）；链尾直接起 M3。

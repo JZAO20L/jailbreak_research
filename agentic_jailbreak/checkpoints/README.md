@@ -10,8 +10,10 @@
 |------|------|----------|------|-------------------|
 | `M2_rft_sft_conv10turn_e2/` | `output/rft_sft_conv10turn_e2/v0-*/checkpoint-134` | Qwen3-4B (base) | RFT SFT 2 epochs（530 条全轨迹样本） | **61.0%**（A800 历史 62.3% @300 / 59.5% @1000） |
 | `M3_grpo_10turn/` | `output/multi_turn_10_agent_rft/v0-*/checkpoint-300` | M2 merged | vanilla GRPO@10，300 步（0.3 epoch） | **56.67%** |
+| `M4_dapo_10turn/` | `output/multi_turn_10_agent_rft_dapo/v0-*/checkpoint-300` | M2 merged | DAPO（dynamic_sample + clip-high），300 步 | **64.33%**（首个超越 RFT 的 RL 臂） |
 
-A 轴排序：**M2 61.0% > M3 56.7% > M0 51.7% > M1 50.7%**（本机 A100 口径）——vanilla GRPO 在 base 与 RFT 初始上均负收益，RFT (M2) 是唯一有效后训练臂。
+A 轴排序：**M4 64.3% > M2 61.0% > M3 56.7% > M0 51.7% > M1 50.7%**（本机 A100 口径）——
+vanilla GRPO 双负收益（稀疏奖励零组空转），DAPO 动态采样翻正（零组率 0.087 vs 0.5）。
 
 ## Merge 用法（⚠️ M3 的 base 是 M2 merged，不是 base！）
 

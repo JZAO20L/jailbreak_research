@@ -104,7 +104,7 @@ C 轴代码前置：rewards.py R2/R3 接入 plugin（现 ASR-only）；R1+λ 需
 | M1 只GRPO | base | vanilla GRPO@10，**显式 `--loss_type grpo`**（TRL 0.29 默认已是 dapo，不设则对照不干净） | ✅ **50.67%**（@300，A800）——低于 M0，vanilla GRPO 在 base 初始上负收益 |
 | M2 RFT | base→SFT | 无 RL，评估@10 | ✅ **59.5%**（@1000，A800）/ 62.3%（@300）；本机 A100 复现 61.0% |
 | M3 RFT+GRPO | M2 merged | vanilla GRPO@10（同 M1 超参） | ✅ **56.67%**（@300，本机 A100 首发）——低于 M2，GRPO 叠加 RFT 依旧负收益 |
-| M4 DAPO | M2 merged | `--loss_type dapo --dynamic_sample true --max_resample_times 3 --epsilon_high 0.28`（同 M3 其余超参） | 🔄 训练中（09-14 启动，@300） |
+| M4 DAPO | M2 merged | `--loss_type dapo --dynamic_sample true --max_resample_times 3 --epsilon_high 0.28`（同 M3 其余超参） | ✅ **64.33%**（@300，09-15 首发）——首个超越 RFT 的 RL 臂 |
 
 统一超参：num_generations=16，其余同 exp03（lr 1e-5 / β 0.05 / temp 0.9 / 300 步）。
 
@@ -126,7 +126,8 @@ C 轴代码前置：rewards.py R2/R3 接入 plugin（现 ASR-only）；R1+λ 需
 > 含 optimizer——output/ 本机保留，不入库）；② 每 300 步评估一次（RUN_TAG=m5_s300/m5_s600/m5_s900、m6_s600）；
 > ③ 若 900 步仍无转正迹象 → 支持"算法/奖励"主因，C 轴提前。
 >
-> **状态**：M4（300 步 DAPO）训练中（09-14 启动，重采样拖慢 ~25-30h）；M5/M6 待跑。
+> **状态**：M4 ✅ **64.33%**（09-15，首个超越 RFT 的 RL 臂）——DAPO 有效性已证（零组率 0.087 vs M3 0.5）；
+> M5（M3 ckpt 续训 900 步）启动中（09-15）；M6（M4 ckpt 续训 600 步）在 M5 后。
 
 **⚠️ RFT 数据量预警（09-03）**：skill_decide@10skills 协议下 split A 1000 条采集 ASR 仅 **~8-9%**（幸存片 61/664=9.2%，补跑片 3.5-11.1%，平均轮数 9.5-9.7）→ M2 SFT 成功轨迹仅 **~85-90 条**，偏薄；M3 GRPO 组内全零梯度风险高。含义：(a) M2 增益可能有限；(b) 若 B 轴 C2/C3 提升基座 ASR，按新 harness 重采可同步缓解数据量与稀疏问题。
 

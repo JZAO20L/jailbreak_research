@@ -369,3 +369,12 @@
 - **计划定稿（TODO.md 09-14 节）**：M5 = M3 ckpt 续训 vanilla GRPO 至 600/900 步（0.6/0.9 epoch）、M6 = M4 ckpt 续训 DAPO 至 600 步；每 300 步区间评估，画 ASR vs 训练步数曲线；900 步仍无转正 → 支持主因在算法/奖励，C 轴提前。续训需完整 checkpoint（含 optimizer，output/ 本机保留）
 - **LoRA ckpt 入库（用户要求，只提交 LoRA）**：新增 `agentic_jailbreak/checkpoints/`（M2 checkpoint-134 64M + M3 checkpoint-300 32M 的 adapter_model.safetensors + 配置/args/README），README 说明 base 对应关系（⚠️ M3 的 merge base 是 M2 merged 而非 base）与 merge 命令；`.gitignore` 为 `checkpoints/` 加 safetensors/json 例外（全局 `**/*.safetensors` 规则原本会拦）；merged 权重（7.6G 级）与完整训练产出仍不入库
 - **框架统一结论**：第三章训练链路（GRPO/DAPO/SFT/merge）已全部 ms-swift 4.3.2；第一章残留 3 个 TRL 直调历史脚本（hybrid/adaptive reward exp）按用户指示不动
+
+## 2026-09-15 — ✅ M4 DAPO 首发结果 = 64.33%：首个超越 RFT 的 RL 臂（A 轴反转）
+
+- **M4 (M2 merged + DAPO@10，300 步) = ASR 64.33% (193/300)，avg_turns 5.02** —— 超越 M2 61.0%（+3.3pp）、M3 56.7%（+7.7pp）
+- **A 轴新排序：M4 64.3% > M2 61.0% > M3 56.7% > M0 51.7% > M1 50.7%** —— vanilla GRPO 双负收益（−3.3/−4.3pp），DAPO 翻正（+3.3pp）
+- **机制归因闭环**：M4 训练 `frac_reward_zero_std` 均值 **0.087**（61 点中 50 个为 0）vs M3 同期 ~0.5 → dynamic_sample 把零组率压低 ~6 倍，非零 advantage 梯度占比大幅上升；Clip-Higher (ε_high=0.28) 放宽高 advantage 上限
+- avg_turns 5.02 < M2 5.44 < M0 6.0：DAPO 训练后策略更早得手（行为层面：更快找到第一击）
+- 与 M3 单变量差异：仅 loss_type=dapo + dynamic_sample + epsilon_high（其余超参/初始权重/数据全同）→ 负收益主因 = 稀疏奖励导致的零组空转（算法侧），非训练量（epoch）单因素；M5/M6 长臂仍跑以测 epoch 余量
+- LoRA 入库 `checkpoints/M4_dapo_10turn/`（32M）；merged 在 `output/m4_10turn_merged/`
