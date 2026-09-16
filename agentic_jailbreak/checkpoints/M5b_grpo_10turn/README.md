@@ -7,8 +7,13 @@
 - 初始 base：`output/m3_10turn_merged`（= M2 merged + M3 LoRA merge，策略 = M3 终态）
 - **v4pdb2-ckpt50** — v4 run（PDB=2 快跑版，run dir `output/multi_turn_10_agent_rft_long/v4-20260915-195128`）checkpoint-50
   = 累计 300(M3) + 100 = 400 条；因显存红线（74G/80G）于 ~step 86 止损，此 ckpt 经 merge 成为 v5 的初始（`output/m5v5_init_ckpt50`）
-- **v5-ckpt50 / v5-ckpt100 / v5-ckpt150** — v5 run（PDB=1 安全版，run dir `v5-20260916-001837`，G=8 / GBS=8 / GA=8 / liger，1600 步计划）
-  = 累计 300 + 100 + {50,100,150} 条
+- **v5-ckpt100 / v5-ckpt150** — v5 run（PDB=1 安全版，run dir `v5-20260916-001837`，G=8 / GBS=8 / GA=8 / liger，1600 步计划）
+  = 累计 300 + 100 + {100,150} 条
+
+> **保留策略（09-16 用户定）**：git 只保留**最新 2 档** + **base 血缘档（v4pdb2-ckpt50）**。
+> base 血缘档必须留：v5 全系的 base `output/m5v5_init_ckpt50` = m3_10turn_merged + v4pdb2-ckpt50 的 merge，
+> 丢了它 v5 所有 adapter 无法重建。更老的档（v5-ckpt50 等）从 tip 移除、本地 output/ 保留至 run 结束。
+> push 时机：评估选点档（ckpt-200/600/1100/1600，对应累计 0.6/1.0/1.5/2.0 epoch）+ 每日一次最新档。
 
 ## 重建方法
 
