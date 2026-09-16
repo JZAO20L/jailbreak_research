@@ -44,6 +44,9 @@ _spec = _ilu.spec_from_file_location(
 _mod = _ilu.module_from_spec(_spec)
 _spec.loader.exec_module(_mod)
 
+# A100 长轨迹显存治理(09-15): 强制 old/ref logps 分块, 防全量 logits 物化(详见 src/logps_chunk_patch.py)
+from agentic_jailbreak.src import logps_chunk_patch  # noqa: F401,E402
+
 from swift.rollout.gym_env import Env, envs
 
 from agentic_jailbreak.src.env import JailbreakEnv
