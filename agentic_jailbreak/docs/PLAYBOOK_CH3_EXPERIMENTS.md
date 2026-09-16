@@ -236,7 +236,7 @@ CUDA_VISIBLE_DEVICES=3 "$V/swift" rlhf \
 **观察点**：① `frac_reward_zero_std` 应显著低于 M1/M3（过滤生效的直接证据）；
 ② 训练时间因重采样变长（A100 实测 ~15-20h/300 步）；③ clip_high 0.28 放宽上限理论上利于高 advantage 组。**前 20 步若 zero_frac 仍 ≥80% 且重采样告警频繁，需查 env 奖励是否退化（如 target/guard 服务异常）。**
 
-### 2.6 长臂续训实验（09-14 计划，epoch 议题；M5 运行中 09-15）
+### 2.6 长臂续训实验（09-14 计划，epoch 议题；⚠️ 09-15 下午起以 §2.6b v3 为准）
 
 > **动机**：GRPO 臂 300 步 = 0.3 epoch（B 段 1000 条，1 epoch = 1000 步；对照组 RFT = 2 epochs 全数据）。
 > ⚠️ **不用 resume**（本环境 TRL resume + fused adam 报 dtype 错，LOG 09-15）。
@@ -264,6 +264,45 @@ CUDA_VISIBLE_DEVICES=3 "$V/swift" rlhf \
 ```
 
 **判定**：累计 900 步（M5）/600 步（M6）仍无转正迹象 → GRPO 负收益主因 = 算法/稀疏奖励（非训练量），转 C 轴。
+
+### 2.6b v3 重启版（09-15 下午；当前运行中，替代 §2.6 的 600 步版）
+
+> 变更（用户口径确认，2026-09-15）：**累计 2.0 epoch** = M3 300 条 + 本 run 再训 1700 条；
+> PDB 1→2 / G 16→8 / GBS 16 不变 / GA 8→4（每步 2 条）；**必须加 `--use_liger_kernel true`**
+> （实测：不加 liger 时长批次 69.5GiB/80GB 高危——PDB=2×G=8 比旧版同量级批次还要高 ~12GiB，"16 序列 ≡ 旧内存"假设不成立；liger 防 logits 物化是 V100/A100 通用解）；
+> `--max_steps 850 --save_steps 50`（加密存档）；lr/max_turns/beta 等其余超参不变，预计 ~31h
+> ⚠️ 09-15 15:08 旧会话（09-13 启动的 qodercli）SIGHUP 清理误杀过一版（trainer 未套 setsid，step 160 无 ckpt）→ **rollout 与 trainer 必须 setsid 启动**；改配置后建议小 smoke（max_steps 2-5）过一遍再上正式 run
+
+```bash
+cd /home/tiger/jailbreak_research/agentic_jailbreak
+V=/home/tiger/jailbreak_research/.venv/bin
+
+# rollout（GPU2；全新干净重启，MASTER_PORT 43456 段亦可用）:
+CUDA_VISIBLE_DEVICES=2 setsid nohup "$V/swift" rollout --model "$PWD/output/rft_sft_conv10turn_e2_merged" \
+    --vllm_tensor_parallel_size 1 --port 8004 --vllm_max_model_len 32768 \
+    --vllm_gpu_memory_utilization 0.8 --torch_dtype bfloat16 > output/logs/rollout_m5v3.log 2>&1 &
+# 直到 curl -sL http://127.0.0.1:8004/health == 200
+
+# trainer（GPU3；关键参数，完整脚本 /tmp/m5_train_cmd_v3.sh）:
+CUDA_VISIBLE_DEVICES=3 setsid nohup bash /tmp/m5_train_cmd_v3.sh > output/logs/m5_train.log 2>&1 &
+# --model output/m3_10turn_merged --per_device_train_batch_size 2 --generation_batch_size 16
+# --num_generations 8 --gradient_accumulation_steps 4 --max_steps 850 --save_steps 50 (其余同 §2.6)
+# --use_liger_kernel true   (必须：长批次显存治理，防 logits 物化)
+
+# 评估: ckpt 每 50 步 → 选点累计 0.6/1.0/1.5/2.0 epoch（RUN_TAG=m5_*）
+# 结论标注: G=8 与 M1-M4 口径不同（零组率预计上升，以实测为准）
+```
+
+> ️ **09-16 00:06 更新（v5，PDB=1 安全版）**：PDB=2 于 00:06 触发 74G/80G 显存红线
+> （old/ref logps 打包行 logits 随轨迹长度无上界）→ 止损；ckpt-50 合并续跑：
+> ```bash
+> swift export --model output/m3_10turn_merged \
+>     --adapters output/multi_turn_10_agent_rft_long/<v4 run>/checkpoint-50 \
+>     --merge_lora true --output_dir output/m5v5_init_ckpt50
+> CUDA_VISIBLE_DEVICES=3 setsid nohup bash /tmp/m5_train_cmd_v5.sh > output/logs/m5_train.log 2>&1 &
+> # v5 配置: PDB=1 / GBS=8 / G=8 / GA=8 / max_steps=1600 / save 50 / liger（其余同 §2.6b）
+> ```
+> PDB=2 仅在 token 级分块补丁（对 lm_head logits 分块）成熟后再启用。
 
 ---
 

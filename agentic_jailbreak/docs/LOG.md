@@ -389,3 +389,33 @@
   - ④ 换 43212：trainer 连 rollout `vllm_group_port 51216` TCPStore 超时 300s——反复失败重启污染了 rollout 侧 group 状态 → **干净重启 rollout 后恢复**
 - **M5 最终语义（方案 B）**：初始 = `m3_10turn_merged`（M2 merged + M3 LoRA，完整权重，策略权重与 M3 连续），全新 run 600 步 + `--save_steps 300`（每 300 步落 ckpt 供区间评估）；lr/optimizer 状态重置（cosine 从 1e-5 重启）。**累计步数口径 = M3 300 + 本 run 步数**（600 / 900 两档评估）——对"ASR vs 累计步数"曲线策略连续性成立
 - 教训：GRPO 续训若要保留 optimizer 语义需避免 resume（或先解决 dtype 组合）；重启链任何一环（rollout/端口）失败后建议整体干净重启
+
+## 2026-09-15 下午 — M5 被旧会话 SIGHUP 误杀（step 160 无 ckpt）+ v3 重启（G=8+PDB=2 修订）
+
+- **事故（15:08-15:12）**：旧 Qoder 会话（09-13 启动、今晨 08:58 启动 M5 的那个）15:08:26 收 SIGHUP 退出（session 日志 `process.exiting reason="signal_term" uptime_ms=169964782`，见 `~/.qoder/logs/runs/2026-09-13T15-55-41-874+08-00-3iqnyz-p6450/qodercli.log`）；会话清理按进程组杀掉其全部子进程——**trainer 未套 setsid** 被连带杀死（最后一步 160/600 @14:59；监视器 15:12 检出退出）。rollout 因 setsid 存活（孤儿化后已清理）。
+  - 损失：无 checkpoint（save_steps=300 未到），trainer 持有的 ~step160 LoRA 权重无法导出 → 6h 进度作废
+  - 根因 = 既有教训"长任务必须 setsid"（rollout 套了、trainer 没套）；旧会话残留 wrapper 70666 等同时消失
+- **处置**：孤儿 rollout + EngineCore 按 PID 清理（GPU2 释放）→ 全新 rollout（setsid）→ smoke 验证 → v3 正式 run（rollout 与 trainer 均 setsid 固化）
+- **可行性研究结论（记录）**：
+  - 训练实为 **LoRA**（args.json `tuner_type=lora`，swift 默认）；权重同步 = 每个 trainer 首次生成时全量同步（`_move_model_to_vllm` 的 `base_sync_done` 逻辑）→ rollout 重启/复用均安全
+  - 步时构成：rollout 主导（步时 ∝ 平均轮数：~33s@1轮 → ~290s@10轮）；旧版每步 1 prompt×16 gen
+  - 显存峰值 = 批次总 token 量高水位：旧 run 14.4GiB@step1 → 53.4GiB@step10（首个 maxLen 11712 批次）→ 57.0-57.8GiB 稳定（LoRA 下激活/logits 主导）；**PDB=2×G=16 长批次外推 ~100GB+ → 必 OOM，被否**
+  - smoke（PDB=2×G=16，5 步）5/5 无错、每 prompt 提速 ~30%（168s/2条 vs ~130s/1条），但短轨迹测不出长批次 OOM
+  - 零组率实测（G=16）：M3 0.544 / M5 0.591（M4 DAPO 0.087）；reward = 成功轮数累加（0-10 整数）非 0/1
+- **v3 配置（用户口径确认）**：累计 2.0 epoch = M3 300 条 + 本 run 再训 1700 条 = 2000 条；**PDB=2 / G=8 / GBS=16 / GA=4**（每步 2 条；850 步，预计 ~31h）；`save_steps 50` 加密存档；max_turns/lr/beta 等其余超参不变
+  - 已知代价（结论中须标注）：G=8 零组率预计上升（方向确定、幅度以实测为准）；M5 与 M1-M4 的 G 口径不同
+- **启动记录**：16:06 rollout+trainer 就绪；run dir `output/multi_turn_10_agent_rft_long/v1-20260915-160618`；脚本 `/tmp/m5_train_cmd_v3.sh`（完整命令见 PLAYBOOK §2.6b）；旧日志保留为 `output/logs/m5_train_dead160.log`
+- **v3 首启复盘（16:06-16:29）**：step 5 长批次（9.1 轮 / maxLen 12134）实测 `memory=69.49GiB`（nvidia-smi 72.6/80GB）——**"16 序列 ≡ 旧版内存"假设不成立**（旧版同量级批次 ~57GiB）→ OOM 风险高，主动止损（仅 ~6 步，无 ckpt）
+- **v3.1（当前）**：v3 + `--use_liger_kernel true`（liger_kernel 0.8.2 已装；V100 fp16 已验证"协议零改动"，A100 bf16 首次使用）；16:36 干净重启（rollout + trainer 均 setsid）；run dir `v2-20260915-163619`；显存看护阈值 60GB（确认 liger 生效）
+- **重排方案评估（用户提议，结论：无必要，放弃）**："guard+target 合卡 + policy 单卡 + 双卡训练"不做——① 训练 rollout-bound（双卡无墙钟收益）；② 双卡 GRPO 链路未验证（scripts 的 NUM_GPUS 仅是机器布局声明）；③ 合卡会让 target（现 100% util）被 guard 抢算力、拖慢 rollout → 显存问题用 liger 更对症
+- 监视安排：Monitor（ckpt 每 100 档 / 卡死 / 退出 / 显存>60GB）+ 3h 心跳 cron
+
+## 2026-09-16 凌晨 — v3.3 触发显存红线（74G/80G）→ 预案续跑 v5（ckpt-50 合并 + PDB=1）
+
+- **触发**：00:06 GPU3 74.1G（3min 内 +10G；allocated 高水位 60.1G）越过 68G 告警线——PDB=2 下 old/ref logps 的打包行 logits 尖峰随轨迹长度无上界（每调用 2 行 × 8 gen 全部 completion token），判定不可持续
+- **止损**：graceful kill（bar step ~86/850；损失 = checkpoint-50 之后的 ~36 步 / 72 条）
+- **续跑**：`swift export --model output/m3_10turn_merged --adapters <v4 run>/checkpoint-50 --merge_lora true --output_dir output/m5v5_init_ckpt50`（沿用既有 merge 先例）→ **v5 全新 run**（run dir `v5-20260916-001837`）：PDB=1 / G=8 / GBS=8 / GA=8 / max_steps=1600 / save 50，其余同 v3.1（liger + 诊断补丁保留）
+- **累计口径**：300（M3）+ 100（ckpt-50 段）+ 1600（v5）= 2000 条 = 2.0 epoch
+- **观测**：v5 起步 GPU3 ~17G（PDB=1 尖峰减半初步证据）；步速 ~109s/步 → ETA ~48h
+- **结论记录**：本机（4 卡全占：guard/target/rollout/train）下 GRPO 多轮训练的安全批几何 = PDB=1；PDB=2 的 ~1.5× 速度以显存风险为代价，仅 token 级分块补丁成熟后可再启用
+- 监视：新 Monitor（58G 阈值）+ 3h 心跳；诊断补丁（`src/logps_chunk_patch.py`）持续记录 step 边界峰值

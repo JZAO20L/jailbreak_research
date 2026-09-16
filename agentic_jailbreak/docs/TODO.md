@@ -119,17 +119,17 @@ C 轴代码前置：rewards.py R2/R3 接入 plugin（现 ASR-only）；R1+λ 需
 >
 > | 臂 | 初始 | 续训 | 验证 |
 > |----|------|------|------|
-> | M5 | M3 checkpoint-300 | vanilla GRPO 600/900 步（0.6/0.9 epoch） | 30%→90% 覆盖后 GRPO 能否转正 |
+> | M5 | M3 checkpoint-300 | ~~600/900 步~~ → **v3: G=8+PDB=2，850 步（再训 1700 条 = 累计 2.0 epoch）** | 30%→200% 覆盖后 GRPO 能否转正 |
 > | M6 | M4 checkpoint-300 | DAPO 600 步（0.6 epoch） | DAPO + 长 epoch 组合 |
 >
 > **执行要点**：① **不使用 resume**（本环境 fused adam dtype 报错，LOG 09-15）——改为方案 B：
-> 初始 = 前一臂 merged 权重（m3_10turn_merged / m4_10turn_merged），全新 run + `--save_steps 300`，
-> 累计步数口径 = 前臂步数 + 本 run 步数；② 每 300 步评估一次（RUN_TAG=m5_s600/m5_s900、m6_s600）；
-> ③ 若 900 步仍无转正迹象 → 支持"算法/奖励"主因，C 轴提前。
+> 初始 = 前一臂 merged 权重（m3_10turn_merged / m4_10turn_merged），全新 run，
+> 累计步数口径 = 前臂步数 + 本 run 步数；② 区间评估选点按累计 epoch（0.6/1.0/1.5/2.0，RUN_TAG=m5_*；v3 起 ckpt 每 50 步）；
+> ③ 若累计 2.0 epoch 仍无转正迹象 → 支持"算法/奖励"主因，C 轴提前。
 >
 > **状态**：M4 ✅ **64.33%**（09-15，首个超越 RFT 的 RL 臂）——DAPO 有效性已证（零组率 0.087 vs M3 0.5）；
-> M5 🔄 运行中（09-15 起，方案 B：m3_10turn_merged 初始 + 600 步新 run + save_steps 300，累计口径 900 步；
-> ⚠️ resume 在本环境不可用（fused adam dtype，见 LOG 09-15 排障链））；M6（M4 ckpt 续训 DAPO 600 步）在 M5 后。
+> M5 🔄 运行中（**v5 续跑**，09-16 00:18 起：初始 = m3_10turn_merged + ckpt-50 合并，**PDB=1**/G=8/GBS=8，1600 步 = 累计 2.0 epoch，save 50；PDB=2 因 00:06 显存红线（74G/80G）止损，详见 LOG 09-16 凌晨节）；
+> ⚠️ v3：15:08 遭旧会话 SIGHUP 误杀（原 run step 160 无 ckpt）后 16:06 重启，详见 LOG 09-15 下午节；M6（M4 ckpt 续训 DAPO）在 M5 后。
 
 **⚠️ RFT 数据量预警（09-03）**：skill_decide@10skills 协议下 split A 1000 条采集 ASR 仅 **~8-9%**（幸存片 61/664=9.2%，补跑片 3.5-11.1%，平均轮数 9.5-9.7）→ M2 SFT 成功轨迹仅 **~85-90 条**，偏薄；M3 GRPO 组内全零梯度风险高。含义：(a) M2 增益可能有限；(b) 若 B 轴 C2/C3 提升基座 ASR，按新 harness 重采可同步缓解数据量与稀疏问题。
 
