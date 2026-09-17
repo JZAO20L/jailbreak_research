@@ -3,6 +3,7 @@
 # 背景: v3.3 (PDB=2) 于 00:06 触发 68G 红线告警 (74.1G/80G, 3min +10G), 按预案止损
 #   → ckpt-50 (bar step 50 = 100 条) 经 swift export merge 进 m3_10turn_merged = 新初始
 # 口径: 累计 2000 条 = M3 300 + ckpt-50 段 100 + 本 run 1600 (PDB=1 → 1600 步)
+# 09-17 目标修订(分段裁决): 先至 1.0ep(step600, cum1000) → 评估 ckpt-500/600 看趋势 → 上升争取 1.4-2.0 / 平降提前收转 C 轴
 # 显存策略: PDB=1 (每调用 1 行, old/ref logps logits 尖峰约减半) + liger + 诊断补丁保留
 # 必须 setsid 启动!
 set -e

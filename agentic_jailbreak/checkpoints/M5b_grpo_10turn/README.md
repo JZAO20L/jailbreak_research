@@ -9,6 +9,7 @@
   = 累计 300(M3) + 100 = 400 条；因显存红线（74G/80G）于 ~step 86 止损，此 ckpt 经 merge 成为 v5 的初始（`output/m5v5_init_ckpt50`）
 - **v5-ckpt450 / v5-ckpt500**（随训练推进轮换，当前最新两档；09-17 因调试服务器到期**紧急同步**）— v5 run（PDB=1 安全版，run dir `v5-20260916-001837`，G=8 / GBS=8 / GA=8 / liger，1600 步计划）
   = 累计 300 + 100 + {450,500} 条；**迁移续跑**：`scripts/m5_train_cmd_v5.sh`（v5 启动模板）+ 本文档重建命令；指标存档 `v5-run-logging.jsonl`（截至 step 500）
+  **续跑目标（09-17 分段裁决）**：先至 **step 600（累计 1.0 epoch）→ 评估 ckpt-500/600** → 趋势上升则争取 1.4-2.0（step 1000/1600）、平/降则提前收转 C 轴
 
 > **保留策略（09-16 用户定）**：git 只保留**最新 2 档** + **base 血缘档（v4pdb2-ckpt50）**。
 > base 血缘档必须留：v5 全系的 base `output/m5v5_init_ckpt50` = m3_10turn_merged + v4pdb2-ckpt50 的 merge，

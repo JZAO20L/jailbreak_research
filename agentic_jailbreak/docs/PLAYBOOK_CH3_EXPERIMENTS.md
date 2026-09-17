@@ -303,6 +303,8 @@ CUDA_VISIBLE_DEVICES=3 setsid nohup bash /tmp/m5_train_cmd_v3.sh > output/logs/m
 > # v5 配置: PDB=1 / GBS=8 / G=8 / GA=8 / max_steps=1600 / save 50 / liger（其余同 §2.6b）
 > ```
 > PDB=2 仅在 token 级分块补丁（对 lm_head logits 分块）成熟后再启用。
+>
+> **09-17 目标修订（用户定，分段裁决制）**：原"硬训 2.0 epoch"改为——先至 **1.0 epoch（step 600，cum 1000）→ 评估 ckpt-500/600 看趋势** → 仍上升则争取 1.4-2.0，平/降则提前收转 C 轴。迁移后从 ckpt 续跑（`scripts/m5_train_cmd_v5.sh`）。
 
 ---
 
