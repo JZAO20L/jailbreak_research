@@ -435,3 +435,4 @@
   - ⚠️ 解释混淆项（报告须写明）：①v5 配置差异（G=8 + liger，与 M3 的 G16/无 liger 不同）；②kl 数值尖峰（估算 10-20% 更新步为垃圾方向）——退化可能部分源于此
   - 行为证据：avg_turns 6.26（vs M3 5.57 / M4 5.02，更长对话 = 退化典型）
   - 产物：`output/eval_results/conv_skill_decide_top10_10turn_m5_600/summary.json`（已存档入库 `checkpoints/M5b_grpo_10turn/m5_600_eval_summary.json`）
+- **A 轴结论定稿（用户 09-17）**：M3+M5 联合证明——本任务下**不开动态采样的 vanilla GRPO 纯负收益**（训练量/epoch 非主因）；**DAPO 为唯一正收益 RL 机制**（M4 64.33%）；RL 臂默认携带 dynamic_sample，主线转向 C 轴。文档定稿：REPORT 单元 8 + PLAYBOOK §2.4；曲线与评估数据归档 `exp/results/curves/`（含 M3/M4/M5 全曲线）+ `exp/results/a_axis/`（五臂 summary，M1 本机无存档取 A800 记录）

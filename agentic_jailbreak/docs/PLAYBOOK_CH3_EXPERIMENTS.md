@@ -188,14 +188,20 @@ RUN_TAG=m3 EVAL_WORKERS=12 bash scripts/eval_conv.sh skill_decide 300 10 2 10
 # 产出: output/eval_results/conv_skill_decide_top10_10turn_m3/summary.json
 ```
 
-### 2.4 A 轴四臂汇总（09-14 已回填；M4 DAPO 完成后在此追加一行）
+### 2.4 A 轴六臂汇总（09-17 定稿）
 | 臂 | 初始 | 训练 | test C | ASR |
 |----|------|------|--------|-----|
-| M0 | base | — | 300 | 54.0%（本机复现 51.7%） |
-| M1 | base | GRPO | 300 | 50.67% |
-| M2 | base→SFT | — | 1000 | 59.5%（@300: 62.3%，本机 61.0%） |
-| M3 | M2 merged | GRPO | 300 | **56.67%**（本机 09-14 首发；@1000 待补） |
-| M4 | M2 merged | DAPO | 300 | **__?__** |
+| M0 | base | — | 300 | 54.0%（A800；本机复现 51.7%） |
+| M1 | base | vanilla GRPO | 300 | 50.67%（A800；−3.3pp vs M0） |
+| M2 | base→SFT | — | 1000/300 | 59.5%（@300: 62.3%，本机 61.0%） |
+| M3 | M2 merged | vanilla GRPO | 300 | **56.67%**（本机；−4.3pp vs M2 本机 61.0） |
+| M4 | M2 merged | DAPO | 300 | **64.33%**（本机；+3.3pp vs M2，**唯一正收益 RL**） |
+| M5 | M3 merged(300步) | vanilla GRPO 续训至 1.0ep | 300 | **48.0%**（本机；**−8.7pp vs M3**，长训退化） |
+
+> **A 轴结论（09-17 定稿，用户口径）**：本任务下**不开动态采样的 vanilla GRPO 纯负收益**
+> （M1/M3/M5 三臂一致为负；M5 证明训得越久越差 → **epoch/训练量假设否证**）；
+> **动态采样（DAPO）是当前唯一正收益 RL 机制**（M4）。RL 臂默认携带 `dynamic_sample`；
+> 下一主线 = C 轴奖励组合（在 DAPO 基线上做）。曲线与评估数据见 `exp/results/curves|a_axis/`，完整结论见 REPORT 单元 8。
 
 ### 2.5 M4 DAPO 臂（09-14 启动；vanilla GRPO 双负收益后的算法对照臂）
 
