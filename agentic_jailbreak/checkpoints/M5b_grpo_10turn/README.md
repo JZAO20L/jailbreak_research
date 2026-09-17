@@ -7,8 +7,8 @@
 - 初始 base：`output/m3_10turn_merged`（= M2 merged + M3 LoRA merge，策略 = M3 终态）
 - **v4pdb2-ckpt50** — v4 run（PDB=2 快跑版，run dir `output/multi_turn_10_agent_rft_long/v4-20260915-195128`）checkpoint-50
   = 累计 300(M3) + 100 = 400 条；因显存红线（74G/80G）于 ~step 86 止损，此 ckpt 经 merge 成为 v5 的初始（`output/m5v5_init_ckpt50`）
-- **v5-ckpt300 / v5-ckpt350**（随训练推进轮换，当前最新两档）— v5 run（PDB=1 安全版，run dir `v5-20260916-001837`，G=8 / GBS=8 / GA=8 / liger，1600 步计划）
-  = 累计 300 + 100 + {300,350} 条；评估选点（累计 600/1000/1500/2000 条 = ckpt-200/600/1100/1600）本地均保留
+- **v5-ckpt450 / v5-ckpt500**（随训练推进轮换，当前最新两档；09-17 因调试服务器到期**紧急同步**）— v5 run（PDB=1 安全版，run dir `v5-20260916-001837`，G=8 / GBS=8 / GA=8 / liger，1600 步计划）
+  = 累计 300 + 100 + {450,500} 条；**迁移续跑**：`scripts/m5_train_cmd_v5.sh`（v5 启动模板）+ 本文档重建命令；指标存档 `v5-run-logging.jsonl`（截至 step 500）
 
 > **保留策略（09-16 用户定）**：git 只保留**最新 2 档** + **base 血缘档（v4pdb2-ckpt50）**。
 > base 血缘档必须留：v5 全系的 base `output/m5v5_init_ckpt50` = m3_10turn_merged + v4pdb2-ckpt50 的 merge，
