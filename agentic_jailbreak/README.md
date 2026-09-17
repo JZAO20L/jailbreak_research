@@ -29,7 +29,7 @@ while turn < max_turns and not success:
     messages += [assistant(action_text), user(guard 反馈)]
     #   C1 全量累积(现状) / C2 分层工作记忆(--work_memory) / C3 滑动窗口(--ctx_window N)
 
-reward = 1.0 if any_turn_success else 0.0   # ASR-only
+reward = Σ per-turn(1.0 if any_success else 0.0)   # ASR-only 累加（0~10，env.step 每轮信号被 trainer 累加）
 ```
 
 ### 与 SESS 的关系
@@ -53,59 +53,54 @@ reward = 1.0 if any_turn_success else 0.0   # ASR-only
 
 ## 技术栈
 
-- **训练框架**：ms-swift 4.3.2（async GYM 环境 `plugin.py`,多轮 GRPO / SFT）
-- **推理引擎**：vLLM server mode（client timeout 1000s,12 路并发采集验证过）
-- **Target 模型**：Qwen3-4B-SafeRL(安全强化模型,`--enable-thinking`)
+- **训练框架**：ms-swift 4.3.2（async GYM 环境 `plugin.py`；多轮 GRPO/DAPO/SFT；LoRA，`tuner_type=lora`）
+- **推理引擎**：vLLM server mode（client timeout 1000s）
+- **Target 模型**：Qwen3-4B（plain，现役；早期 SafeRL target 已切换）
 - **Guard 模型**：Qwen3Guard-Gen-4B
-- **奖励设计**：ASR only(现协议);C 轴将扩展过程/效率/AHR 自适应组合
-- **硬件**:4×V100-SXM2-32GB(V100 不支持 bf16,显式 `--dtype float16`)
+- **奖励设计**：ASR only（每轮 success 累加，0~10）；C 轴将扩展过程/效率/AHR 自适应组合
+- **显存治理**：`--use_liger_kernel true`（防 logits 物化）+ PDB=1 安全批几何（PDB=2 曾触发 74G/80G 红线，见 LOG 09-16/17）
+- **现役节点**：4×A100-80GB（调试节点，即将到期迁移；早期 4×V100-32GB 需 fp16 + `src/v100_attn_patch.py`）
 
-## 当前状态(2026-09-03)
+## 当前状态（2026-09-17）
 
-- ✅ 核心方法形态定稿:PAIR 骨架 + 10-skill,`skill_decide`,对话式 10 轮(协议已切齐 eval/env/plugin/build/采集脚本)
-- ✅ 基座基线与消融:no_skill 全量 23.2%(5 轮)、skill_decide 全量 19.0%(5 轮,54 库)、TAP 7.2%、Crescendo 1.8%、PAIR 1.8%
-- ✅ GRPO 链路验证:exp01/02/03(单/3/5 轮)500 步全量完成;RFT+GRPO 复训 200/200 步(暴露 reward 饥饿 → 10 轮 + num_generations=16 缓解)
-- ✅ RFT v3 采集:split A 1000 条 skill_decide@10skills 10 轮(1000s timeout 事故已恢复,finalize 收尾中,ASR ~8-9%)
-- 🔄 **B 轴上下文消融**(前置):C1 全量 / C2 工作记忆 / C3 滑动窗口,base + test C 前 300(`run_baxis_ctx_ablation.sh`)
-- ⏳ A 轴 M1/M2/M3 训练臂 **HOLD 至 B 轴定稿 harness**;C 轴 reward 组合在 A 轴后
-- 详见 [TODO](docs/TODO.md) 三轴规划与 [LOG](docs/LOG.md) 事件时间线
+- ✅ **A 轴后训练配方定稿**（六臂 M0-M5，test C 300）：**本任务下不开动态采样的 vanilla GRPO 纯负收益**（M1 −3.3pp / M3 −4.3pp / M5 长训 −8.7pp；训练量/epoch 非主因）——**DAPO 唯一正收益**（M4 **64.33%**）。完整结论见 [REPORT 单元 8](docs/REPORT.md)
+- ✅ B 轴上下文定稿（C1 全量累积）;对话式 `skill_decide@10skill@10 轮` 主协议;基座 M0 54.0% / TAP 7.2% / Crescendo 1.8%
+- ✅ M5 长臂负结果（1.0 epoch = **48.0%**，低于起点 M3）：ckpt / 训练曲线 / 评估数据全部入库（防服务器释放）
+- ⏭️ **下一步（服务器迁移后）**：**M6 = DAPO 更多步数续训**（M4 ckpt 起，方案 B）→ C 轴奖励组合（R1+P/E/λ）
+- 📦 关键产物：`checkpoints/`（LoRA 血缘链 + 最新档 + 重建说明）、`exp/results/curves|a_axis/`（论文绘图数据）、`scripts/m5_train_cmd_v5.sh`（续跑模板）、[PLAYBOOK](docs/PLAYBOOK_CH3_EXPERIMENTS.md)（全命令手册）
+- 迁移指引：新节点 `git clone` 本仓库 → `checkpoints/M5b_grpo_10turn/README.md` 重建权重链 → [PLAYBOOK](docs/PLAYBOOK_CH3_EXPERIMENTS.md) 起服务续跑
+- 详见 [TODO](docs/TODO.md)（待办）、[LOG](docs/LOG.md)（事件时间线）、[REPORT](docs/REPORT.md)（研究结论）
 
 ## 目录结构与文档导航
 
 ```
 agentic_jailbreak/
-├── README.md              # 本文件(项目概述 + 环境准备)
+├── README.md              # 本文件(项目概述 + 环境准备 + 迁移指引)
 ├── docs/                  # 文档
-│   ├── README.md          # 设计文档 + FAQ
-│   ├── TODO.md            # 唯一待办清单(三轴实验规划)
-│   ├── LOG.md             # 唯一事件时间线
+│   ├── TODO.md            # 唯一待办清单(三轴 + M6/迁移待办)
+│   ├── LOG.md             # 唯一事件时间线(含事故/排障全记录)
+│   ├── REPORT.md          # 唯一研究结论清单(单元 1-8;A 轴结论=单元 8)
+│   ├── PLAYBOOK_CH3_EXPERIMENTS.md  # 第三章执行手册(从零到全命令)
 │   └── RSI_DESIGN.md      # Phase 5 RSI 递归自我改进设计
+├── checkpoints/           # LoRA 血缘链入库(仅 adapter)
+│   ├── M2_rft_sft_conv10turn_e2 / M3_grpo_10turn / M4_dapo_10turn
+│   └── M5b_grpo_10turn/   # v5-ckpt600(最新档) + v4pdb2-ckpt50(血缘) + README(重建命令)
+├── exp/results/           # 论文数据归档(防服务器释放)
+│   ├── curves/            # 训练曲线 jsonl(M3/M4/M5)+ 绘图说明
+│   └── a_axis/            # 六臂评估 summary.json
 ├── src/                   # 源代码(见 src/README.md)
-│   ├── conv_eval.py       # 对话式评估核心(定稿 harness:消息累积/skill_decide 解析/C2 C3 上下文)
-│   ├── env.py             # JailbreakEnv(GYM 环境;skill 候选质量池)
-│   ├── plugin.py          # ms-swift async GYM 插件(DEFAULT_ENV_CONFIG=定稿协议)
-│   ├── working_memory.py  # C2 分层工作记忆(前轮总结+末轮完整反馈)
-│   ├── agent.py           # legacy Agent(无状态 harness,保留)
+│   ├── conv_eval.py / env.py / plugin.py   # 定稿 harness(对话式 / skill_decide / C1)
+│   ├── logps_chunk_patch.py   # A100 显存诊断补丁(plugin 加载)
+│   ├── v100_attn_patch.py     # V100 SDPA 修复(legacy 节点用)
 │   ├── rewards.py         # 奖励函数(C 轴扩展点,现 ASR-only)
-│   └── eval.py            # 评估入口(--mode conversational / --ctx_window / --work_memory)
+│   ── ...                # (working_memory/agent/eval 等见 src/README.md)
 ├── scripts/               # 实验脚本(见 scripts/README.md)
-│   ├── common.sh          # 共享函数
-│   ├── start_servers_v100.sh  # 4×V100 三服务(guard/target/policy)
-│   ├── eval_conv.sh       # 对话式评估
-│   ├── run_rft_collect_conv.sh        # RFT v3 采集(split A 1000 条,skill_decide@10skills)
-│   ├── build_rft_data_conv.py         # conv 轨迹 → 全轨迹 SFT 样本
-│   ├── rft_sft_conv.sh                # RFT SFT 训练
-│   ├── run_baxis_ctx_ablation.sh      # B 轴上下文消融(C1/C2/C3)
-│   ├── finalize_rft_collect_20260903.sh  # 采集收尾(补跑+merge+SFT)
-│   ├── exp01/02/03_*.sh   # GRPO 单/3/5 轮
-│   └── exp04_grpo_10turn.sh           # A 轴 M1 GRPO@10(待跑)
-├── exp/                   # 消融实验产出
-│   ├── skill_asr_sweep/   # 54 库单调用 ASR 扫描 + seed_skills_top10.json(定稿 skill 库)
-│   └── beam_pilot/        # beam 消融
-├── data/                  # 数据文件
-│   └── skills.json        # 54 skills(SESS Layer 4)
+│   ├── eval_conv.sh       # 对话式评估(必带 RUN_TAG 防覆盖)
+│   ├── m5_train_cmd_v5.sh # 当前训练模板(PDB=1/G=8/liger/save50;迁移续跑用)
+│   ── exp04_grpo_10turn.sh / rft_sft_conv.sh / build_rft_data_conv.py / ...
+├── data/                  # 数据(grpo_data.jsonl=训练 B 段 1000 条; skills.json=54 skills)
 ├── baselines/             # TAP / Crescendo / PAIR baseline 实现
-└── output/                # 实验输出(rft_collect_conv_10turn/ 等)
+└── output/                # 实验输出(gitignore;训练 ckpt 每 50 步自动存档)
 ```
 
 ## 环境准备
@@ -114,12 +109,13 @@ agentic_jailbreak/
 
 | 项 | 路径/版本 |
 |----|-----------|
-| Target | `/home/tiger/models/Qwen/Qwen3-4B-SafeRL` |
-| Guard | `/home/tiger/models/Qwen/Qwen3Guard-Gen-4B` |
-| Policy | `/home/tiger/models/Qwen/Qwen3-4B`(thinking-enabled 生成) |
-| Skill 库 | `exp/skill_asr_sweep/seed_skills_top10.json`(定稿,10 个) |
-| 虚拟环境 | `/home/tiger/jailbreak_research/.venv`(vLLM 0.18.0, ms-swift 4.3.2) |
-| 硬件 | 4×V100-SXM2-32GB |
+| Target | `model/Qwen3-4B`（plain，现役 8002） |
+| Guard | `model/Qwen3Guard-Gen-4B`（现役 8001） |
+| Policy/训练基座 | `model/Qwen3-4B`（thinking-enabled 生成） |
+| Skill 库 | `exp/skill_asr_sweep/seed_skills_top10.json`（定稿 10 个） |
+| 虚拟环境 | `jailbreak_research/.venv`（vLLM + ms-swift 4.3.2 + liger-kernel 0.8.2） |
+
+迁移到新节点：`git clone` 本仓库 → 按 `checkpoints/M5b_grpo_10turn/README.md` 重建权重链 → 按 [PLAYBOOK](docs/PLAYBOOK_CH3_EXPERIMENTS.md) 起服务/续跑。
 
 ### 数据隔离(A/B/C 两两不重叠,08-26 修正)
 
@@ -129,44 +125,40 @@ agentic_jailbreak/
 | B | train[0:1000] | GRPO 训练(`grpo_data.jsonl`) |
 | C | test(test_prompts.json,10k) | 评估 |
 
-## GPU 部署(4×V100 现行布局)
+## GPU 部署（4 卡布局，A100 现役）
 
 ```
-┌───────────────┬────────────────┬────────────────┬──────────────┐
-│     GPU 0     │      GPU 1     │      GPU 2     │     GPU 3    │
-├───────────────┼────────────────┼────────────────┼──────────────┤
-│ Guard 8001    │ Target 8002    │ Policy 8003    │ 训练         │
-│ Qwen3Guard-4B │ Qwen3-4B-SafeRL│ Qwen3-4B       │ (SFT/GRPO)   │
-│ max_len 8192  │ max_len 8192   │ max_len 24576  │ GRPO 时 GPU2 │
-│               │                │                │ 换 rollout   │
-└───────────────┴────────────────┴────────────────┴──────────────┘
+┌───────────────┬────────────────┬────────────────────┬──────────────┐
+│     GPU 0     │      GPU 1     │       GPU 2        │     GPU 3    │
+├───────────────────────────────┼────────────────────┼──────────────┤
+│ Guard 8001    │ Target 8002    │ 训练时: rollout    │ 训练 trainer │
+│ Qwen3Guard-4B │ Qwen3-4B plain │  8004(swift)       │ GRPO/DAPO    │
+│               │                │ 评估时: policy     │              │
+│               │                │  8003(vllm serve)  │              │
+└───────────────┴────────────────┴────────────────────┴──────────────┘
 ```
 
-注意:policy `max_model_len 24576`(16384 时出现过 input+max_tokens 越界崩溃,差 1 token 即崩)。
+注意：①评估用 8003 **标准 vllm serve**，训练用 8004 **swift rollout**（带 communicator，裸 vllm serve 报 404）；②`max_model_len 32768`（24576 时代差 1 token 越界崩过）；③**长任务必须 `setsid`**（未套 setsid 的训练曾被会话清理误杀，LOG 09-15）；④vLLM 残留 `VLLM::EngineCore` 需按 PID 单独清理（见 TODO 踩坑记录）。
 
 ## 快速开始
 
 ```bash
-# 1. 启动三服务(guard=8001 / target=8002 / policy=8003)
-bash scripts/start_servers_v100.sh
+# 1. 起服务(guard=8001 / target=8002；训练另起 rollout 8004 / 评估另起 policy 8003)
+bash scripts/start_servers_v100.sh        # 旧 V100 节点;A100 节点命令见 PLAYBOOK §1
 
-# 2. 对话式评估(基座,skill_decide@10skills)
-bash scripts/eval_conv.sh
+# 2. 对话式评估（示例:ckpt-600;RUN_TAG 必带,防多臂结果互相覆盖）
+RUN_TAG=m5_600 EVAL_WORKERS=12 bash scripts/eval_conv.sh skill_decide 300 10 2 10
 
-# 3. RFT 采集(split A,12 路并发)
-bash scripts/run_rft_collect_conv.sh
+# 3. 训练（当前模板 = v5:PDB=1/G=8/liger/save50；setsid 必加）
+CUDA_VISIBLE_DEVICES=3 setsid nohup bash scripts/m5_train_cmd_v5.sh > output/logs/m5_train.log 2>&1 &
 
-# 4. B 轴上下文消融(C1/C2/C3 × test C 前 300)
-bash scripts/run_baxis_ctx_ablation.sh
-
-# 5. A 轴训练臂(B 轴定稿后)
-bash scripts/exp04_grpo_10turn.sh   # M1 只 GRPO
-bash scripts/rft_sft_conv.sh        # M2 RFT SFT
+# 4. 续跑/迁移:权重重建见 checkpoints/M5b_grpo_10turn/README.md；完整命令见 PLAYBOOK §2.6b
 ```
 
 ## 参考
 
+- [REPORT 研究结论](docs/REPORT.md)（单元 8 = A 轴定稿）
+- [PLAYBOOK 执行手册](docs/PLAYBOOK_CH3_EXPERIMENTS.md)（从零到全命令）
 - [SESS 第二章](../self_evolve_skills_jailbreak/)
 - [AHR-GRPO 第一章](../RL4jailbreak/)
 - [PAIR 论文](https://arxiv.org/abs/2310.08414)
-- [ms-swift 多轮 GRPO](../../docs/swift/grpo_multi_turn.md)

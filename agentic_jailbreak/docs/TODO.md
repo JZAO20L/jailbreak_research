@@ -120,7 +120,7 @@ C 轴代码前置：rewards.py R2/R3 接入 plugin（现 ASR-only）；R1+λ 需
 > | 臂 | 初始 | 续训 | 验证 |
 > |----|------|------|------|
 > | M5 | M3 checkpoint-300 | ~~600/900 步~~ → **v3: G=8+PDB=2，850 步（再训 1700 条 = 累计 2.0 epoch）** | 30%→200% 覆盖后 GRPO 能否转正 |
-> | M6 | M4 checkpoint-300 | DAPO 600 步（0.6 epoch） | DAPO + 长 epoch 组合 |
+> | M6 | M4 checkpoint-300 | DAPO 续训（~~600 步~~ ≥300 步选点制；09-17 用户指示"更多步数"，迁移后执行） | DAPO 长训增益上限 |
 >
 > **执行要点**：① **不使用 resume**（本环境 fused adam dtype 报错，LOG 09-15）——改为方案 B：
 > 初始 = 前一臂 merged 权重（m3_10turn_merged / m4_10turn_merged），全新 run，
@@ -218,3 +218,12 @@ C 轴代码前置：rewards.py R2/R3 接入 plugin（现 ASR-only）；R1+λ 需
 - **SESS 被 AAAI 2027 desk reject**(超 9 页, 格式拒, 内容未经评审)→ 第三章可定位"SESS 框架下的 RL 优化"(09-02 口径本就一脉相承, 实验零改动);待定: 重投目标会议 + 论文归属 A(并入 SESS v3)/B(独立成文+毕业论文串联)。方案 B 下 vs SESS 对比实验(C1)优先级提前
 - **用户提议降 num_generations 16→8**:已否决——全零组概率 22%→47%(与提升奖励稠密度初衷相反), 轨迹内串行为主, 提速 <20%;v10 的 66% 零组正是 8 条组的数据
 - **用户提议换 target 为 plain Qwen3-4B**:暂缓——PAIR@plain4B 已 91.8% 近天花板, 非对齐 target 的 ASR 科学性弱 + 重做成本约一周 4 卡(B 轴/RFT/M0-M3/baselines 全部);替代阶梯: 等 M1 zero-std 数据 → C 轴 reward 提前 / DAPO 臂 / plain4B 只作第二评估 target(transfer 表)
+
+## 2026-09-17 收尾与后续（服务器迁移后执行）
+
+- [ ] **服务器迁移**：调试节点到期 → 新节点 `git clone`（github:JZAO20L/jailbreak_research）→ 按 `checkpoints/M5b_grpo_10turn/README.md` 重建权重链（m3 链 + v4pdb2-ckpt50 → m5v5_init；M4 臂 = m2 merged + M4 adapter）→ 按 PLAYBOOK 起三服务
+- [ ] **M6：DAPO 更多步数续训**（用户 09-17 定，迁移后第一训练任务）：从 **M4 ckpt 起**（方案 B：`m4_10turn_merged` 初始 + 全新 run），验证 DAPO 长训的增益上限；建议选点制（累计 0.6/1.0 epoch = 300/600 步档，各评估 test C 300，RUN_TAG=m6_*）
+- [ ] **C 轴代码前置**（开发机交付）:rewards.py R2/R3 接入 plugin；R1+λ AHR 需 env 返回奖励分量 + 训练侧组级自适应混合 → 随后跑 R1+P / R1+E / R1+λ 三臂（DAPO 基线）
+- [ ] （可选）M5 配对曲线：ckpt-500（本地）与 ckpt-600 的 0.9/1.0ep 评估配对（服务器释放前做；释放后仅 ckpt-600 在库）
+- 产物保障：ckpt 保留策略 = git 仅最新 1 档 + 血缘链（见 checkpoints README）；训练曲线/评估数据已归档 `exp/results/`
+
