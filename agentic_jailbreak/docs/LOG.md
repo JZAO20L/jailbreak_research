@@ -419,3 +419,11 @@
 - **观测**：v5 起步 GPU3 ~17G（PDB=1 尖峰减半初步证据）；步速 ~109s/步 → ETA ~48h
 - **结论记录**：本机（4 卡全占：guard/target/rollout/train）下 GRPO 多轮训练的安全批几何 = PDB=1；PDB=2 的 ~1.5× 速度以显存风险为代价，仅 token 级分块补丁成熟后可再启用
 - 监视：新 Monitor（58G 阈值）+ 3h 心跳；诊断补丁（`src/logps_chunk_patch.py`）持续记录 step 边界峰值
+
+## 2026-09-17 — 调试服务器到期迁移（紧急同步）+ v5 指标尖峰归因
+
+- **用户通知调试服务器即将到期** → 紧急同步 GitHub（`58147b0`）：最新两档 ckpt（450/500）+ `scripts/m5_train_cmd_v5.sh`（续跑模板）+ `v5-run-logging.jsonl`（指标存档，截至 step 500）
+- **补漏**：训练集 `output/grpo_data.jsonl`（B 段 train[0:1000]，1.38MB）此前不在 git（output/ 被忽略）→ 复制到 `agentic_jailbreak/data/grpo_data.jsonl` 入库（迁移必须）；评估数据（10k/test.jsonl、benchmarks）已在 git 无需处理
+- 训练在服务器释放前继续运行（step ~500/1600）；新服务器续跑 = 见 `checkpoints/M5b_grpo_10turn/README.md` 重建命令（m3 链 + v4pdb2-ckpt50 → m5v5_init → ckpt-500 merge → `m5_train_cmd_v5.sh` 改 --model/--max_steps）
+- **v5 指标 kl 数值尖峰归因（重要发现）**：基线（M3/v0：G16、无 liger、460 步）**零尖峰**（max kl 0.05）；v5 系（G=8 + liger）反复出现 1e8-1e11 级瞬态尖峰（~每 40-130 步），梯度被 clip（max_grad_norm=1.0）限幅、每次自行恢复。候选主因 = liger 或 G=8（两者始终同场，现有数据不可分；v3.1/v4/v5 均两者共存）。粗估 10-20% 更新步为"垃圾方向"；但 reward 窗口轨迹与 M3 同期相当（0.42→0.34 vs 0.41→0.36）→ 暂判可控，最终以评估 ASR 定论；报告需单列"数值稳定性"节
+- ⚠️ 评估选点 ckpt-200（0.6ep）将随服务器销毁（保留策略=最新 2 档；已提示用户可另行保存）
