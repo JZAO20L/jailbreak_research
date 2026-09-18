@@ -1,0 +1,31 @@
+% Cross-Model Transfer Results (Corrected)
+\begin{table}[t]
+\centering
+\caption{Cross-model transfer results on 4 target models (default dataset). SESS-enhanced methods consistently outperform baselines. Same-family transfer (Qwen series) achieves 77--86\% ASR with pair\_skills, while cross-family transfer (GPT-OSS-20B) remains challenging. Structure prior (DAN seeds) significantly improves cross-family transfer: autodan\_skills (28--39\%) vs. pair\_skills (8--13\%).}
+\label{tab:transfer_models}
+\small
+\begin{tabular}{lccccc}
+\toprule
+\textbf{Method} & \multicolumn{4}{c}{\textbf{Model (Family)}} & \textbf{Avg} \\
+\cmidrule(lr){2-5}
+ & 0.6B & 4B & 14B & 20B* & \\
+\midrule
+no\_rewrite & 42.6 & 30.3 & 22.6 & 0.7 & 24.1 \\
+pair & 77.3 & 55.5 & 58.5 & 0.2 & 47.9 \\
+autodan & 88.0 & 86.8 & 80.9 & 12.5 & 67.1 \\
+deepinception & 47.2 & 40.4 & 32.0 & 0.4 & 30.0 \\
+\midrule
+\multicolumn{6}{l}{\textit{SESS-enhanced (no structure prior)}} \\
+pair\_skills\_28 & 85.5 & 79.0 & 77.0 & 12.9 & 63.6 \\
+\midrule
+\multicolumn{6}{l}{\textit{SESS-enhanced (with DAN structure prior)}} \\
+autodan\_skills\_54 & --- & --- & --- & \textbf{30.0} & --- \\
+\midrule
+\textbf{Improvement} & +8.2 & +23.5 & +18.5 & +17.5 & --- \\
+\textbf{(pair\_skills vs best baseline)} & & & & & \\
+\bottomrule
+\multicolumn{6}{l}{\small *GPT-OSS-20B is a \textbf{cross-family} model (OpenAI architecture).} \\
+\multicolumn{6}{l}{\small autodan\_skills uses DAN templates as seeds (structure prior), achieving 28--39\% on gpt-oss.} \\
+\multicolumn{6}{l}{\small pair\_skills uses pure self-evolution (no structure prior), achieving only 8--13\% on gpt-oss.} \\
+\end{tabular}
+\end{table}

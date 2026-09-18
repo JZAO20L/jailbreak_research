@@ -1,0 +1,36 @@
+% Table 4: Ablation study - component contributions
+\begin{table}[t]
+\centering
+\caption{Ablation study: contribution of each SESS component (Qwen3-4B, WildJailbreak).}
+\label{tab:ablation}
+\resizebox{\columnwidth}{!}{%
+\small
+\begin{tabular}{lccc}
+\toprule
+\textbf{Component} & \textbf{ASR (\%)} & \textbf{$\Delta$} & \textbf{Insight} \\
+\midrule
+PAIR baseline (no skills) & 55.5 & --- & Reference point \\
+\midrule
+\textbf{Skill System} & & & \\
++ Cold Start + Retrieval + Maintenance & 78.2 & +22.7 & Primary contribution \\
++ Evolution (statistical) & 79.1 & +0.9 & Marginal refinement \\
+\midrule
+\textbf{Structure Prior} & & & \\
+DAN templates (no evolution) & 98.8 & +19.7 & Dominant factor \\
+DAN + Evolution & 99.7 & +0.9 & Ceiling reached \\
+\bottomrule
+\end{tabular}%
+}
+\end{table}
+
+% Key insight for paper narrative:
+% - Skill System architecture is the main engine (+22.7pp)
+% - Evolution is designed for refinement, not breakthrough (+0.9pp under optimal config)
+% - Structure prior (DAN) determines the performance ceiling
+%
+% Data sources:
+% - PAIR baseline: 55.5% (transfer experiments)
+% - CS + Retrieval + Maintenance: 78.2% (ablation: single_call + trajectory + statistical, skip evolution)
+% - CS + Evolution: 79.1% (layer1: single_call + trajectory + statistical, best config)
+% - DAN only: 98.8% (layer3: full_evolve, 6 templates unchanged)
+% - DAN + Evolution: 99.7% (layer4: medium + evo)

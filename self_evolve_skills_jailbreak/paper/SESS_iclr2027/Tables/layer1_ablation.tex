@@ -1,0 +1,28 @@
+% Layer 1: Method Combination Ablation (Strategy Comparison)
+\begin{table}[t]
+\centering
+\caption{Layer 1: Evolution strategy comparison. \texttt{statistical} achieves the best ASR (79.1\%) with stable skill count (28), avoiding skill explosion. The \texttt{both} strategy causes skill dilution (>74 skills) and performance drop. \texttt{success\_only} maintains positive evolution contribution but lower ceiling.}
+\label{tab:layer1}
+\small
+\begin{tabular}{llccc}
+\toprule
+\textbf{Call Mode} & \textbf{Strategy} & \textbf{ASR (\%)} & \textbf{Skills} & \textbf{Evo $\Delta$} \\
+\midrule
+\multicolumn{5}{l}{\textit{Best configurations per strategy}} \\
+single\_call + traj & \textbf{statistical} & \textbf{79.1} & \textbf{28} & +0.9 \\
+single\_call + traj & success\_only & 78.8 & — & +1.7 \\
+single\_call + traj & failure\_only & 76.2 & — & +0.3 \\
+single\_call + traj & both & 70.4 & 74 & -5.2 \\
+\midrule
+\multicolumn{5}{l}{\textit{Call mode comparison (trajectory + statistical)}} \\
+single\_call & — & \textbf{79.1} & 28 & +0.9 \\
+every\_iteration & — & 70.0 & 24 & +7.1 \\
+\midrule
+\multicolumn{5}{l}{\textit{Extraction mode comparison (single\_call + statistical)}} \\
+trajectory & — & \textbf{79.1} & 28 & +0.9 \\
+final\_prompt & — & 68.4 & — & -10.9 \\
+\bottomrule
+\multicolumn{5}{l}{\small \texttt{statistical} maintains stable skill count, avoiding dilution.} \\
+\multicolumn{5}{l}{\small \texttt{both} triggers skill explosion → performance drop (Skill Dilution).} \\
+\end{tabular}
+\end{table}
